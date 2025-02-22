@@ -20,7 +20,7 @@ std::vector<std::byte> read_binary_file(const std::string& path) {
 
 /* Called once on init. */
 void Renderer::Init() {
-	auto binary = read_binary_file("assets/toad.vox");
+	auto binary = read_binary_file("assets/dragon.vox");
 	const ogt_vox_scene* scene = ogt_vox_read_scene((uint8_t*)binary.data(), binary.size());
 
 	printf("loaded model with size: %u, %u, %u\n", scene->models[0]->size_x, scene->models[0]->size_y, scene->models[0]->size_z);

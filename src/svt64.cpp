@@ -105,15 +105,19 @@ void Svt64::build(const RawVoxels& raw_data)
 	printf("raw memory: %.2fMB, tree memory: %.2fMB (%.2f%%)\n", (float)raw_size / 1000000, (float)tree_size / 1000000, memory_percent);
 }
 
-inline uint get_node_cell_index(float3 pos, int scale_exp) {
-	uint3 cell_pos = uint3((uint32_t&)pos.x >> scale_exp & 3, (uint32_t&)pos.y >> scale_exp & 3, (uint32_t&)pos.z >> scale_exp & 3);
-	return cell_pos.x + cell_pos.y * 16u + cell_pos.z * 4u;
+inline uint get_node_cell_index(const float3 pos, const int scale_exp) {
+	const uint cell_x = (uint&)pos.x >> scale_exp & 3u;
+	const uint cell_y = (uint&)pos.y >> scale_exp & 3u;
+	const uint cell_z = (uint&)pos.z >> scale_exp & 3u;
+	return cell_x + cell_y * 16u + cell_z * 4u;
 }
 
-inline float3 floor_scale(float3 pos, int scale_exp) {
-	uint32_t mask = ~0u << scale_exp;
-	const uint3 masked = uint3(((uint32_t&)pos.x & mask), (uint32_t&)pos.y & mask, (uint32_t&)pos.z & mask);
-	return float3((float&)masked.x, (float&)masked.y, (float&)masked.z);
+inline float3 floor_scale(const float3 pos, const int scale_exp) {
+	const uint mask = ~0u << scale_exp;
+	const uint masked_x = (uint&)pos.x & mask;
+	const uint masked_y = (uint&)pos.y & mask;
+	const uint masked_z = (uint&)pos.z & mask;
+	return float3((float&)masked_x, (float&)masked_y, (float&)masked_z);
 }
 
 // Reverses `pos` from range [1.0, 2.0) to (2.0, 1.0] if `dir > 0`.
@@ -130,15 +134,15 @@ inline uint popcnt_var64(uint64_t mask, uint width) {
 	return __popcnt64(mask & ((1ull << width) - 1));
 }
 
-float2 intersect_aabb(float3 origin, float3 invDir, float3 bbMin, float3 bbMax) {
+inline float2 intersect_aabb(const float3 origin, const float3 invDir, const float3 bbMin, const float3 bbMax) {
 	float3 t0 = (bbMin - origin) * invDir;
 	float3 t1 = (bbMax - origin) * invDir;
 
-	float3 temp = t0;
+	const float3 temp = t0;
 	t0 = fminf(temp, t1), t1 = fmaxf(temp, t1);
 
-	float tmin = fmaxf(fmaxf(fmaxf(t0.x, t0.y), t0.z), 0.0f);
-	float tmax = fminf(fminf(t1.x, t1.y), t1.z);
+	const float tmin = fmaxf(fmaxf(fmaxf(t0.x, t0.y), t0.z), 0.0f);
+	const float tmax = fminf(fminf(t1.x, t1.y), t1.z);
 
 	return float2(tmin, tmax);
 }
@@ -166,7 +170,7 @@ VoxelHit Svt64::trace(const Ray& ray) const
 
 	/* Safety clamp */
 	float3 pos = clamp(origin, 1.0f, 1.9999999f);
-	float3 inv_dir = 1.0 / -fabs(dir);
+	float3 inv_dir = 1.0f / -fabs(dir);
 
 	float3 side_dist{};
 	int i = 0;
