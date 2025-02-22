@@ -191,12 +191,12 @@ VoxelHit Svt64::trace(const Ray& ray) const
 		/* If this node is a leaf, check if we hit a voxel */
 		if (node.is_leaf() && (node.child_mask >> child_index & 1) != 0) break;
 
-		// 2³ steps
-		int adv_scale_exp = scale_exp;
-		if ((node.child_mask >> (child_index & 0b101010) & 0x00330033) == 0) adv_scale_exp++;
+		/* Check if we can actually take a larger step based on the child mask */
+		int sub_scale_exp = scale_exp;
+		if ((node.child_mask >> (child_index & 0b101010) & 0x00330033) == 0) sub_scale_exp++;
 
 		// Compute next pos by intersecting with max cell sides
-		const float3 cell_min = floor_scale(pos, adv_scale_exp);
+		const float3 cell_min = floor_scale(pos, sub_scale_exp);
 
 		side_dist = (cell_min - origin) * inv_dir;
 		float tmax = fminf(fminf(side_dist.x, side_dist.y), side_dist.z);
@@ -204,9 +204,9 @@ VoxelHit Svt64::trace(const Ray& ray) const
 		const int3 cell_min_i = int3((int&)cell_min.x, (int&)cell_min.y, (int&)cell_min.z);
 
 		int3 neighbor_max = cell_min_i;
-		neighbor_max.x += side_dist.x == tmax ? -1 : (1 << adv_scale_exp) - 1;
-		neighbor_max.y += side_dist.y == tmax ? -1 : (1 << adv_scale_exp) - 1;
-		neighbor_max.z += side_dist.z == tmax ? -1 : (1 << adv_scale_exp) - 1;
+		neighbor_max.x += side_dist.x == tmax ? -1 : (1 << sub_scale_exp) - 1;
+		neighbor_max.y += side_dist.y == tmax ? -1 : (1 << sub_scale_exp) - 1;
+		neighbor_max.z += side_dist.z == tmax ? -1 : (1 << sub_scale_exp) - 1;
 
 		/* Move to the entry point of our neighbour */
 		pos = fminf(origin - fabs(dir) * tmax, (float3&)neighbor_max);
