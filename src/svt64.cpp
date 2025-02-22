@@ -143,6 +143,7 @@ float2 intersect_aabb(float3 origin, float3 invDir, float3 bbMin, float3 bbMax) 
 	return float2(tmin, tmax);
 }
 
+/* Credit: <https://dubiousconst282.github.io/2024/10/03/voxel-ray-tracing/> */
 float Svt64::trace(const Ray& ray) const
 {
 	/* Traversal state */
@@ -163,7 +164,7 @@ float Svt64::trace(const Ray& ray) const
 	if (dir.y > 0.0f) mirror_mask |= 3u << 4;
 	if (dir.z > 0.0f) mirror_mask |= 3u << 2;
 
-	// Clamp to prevent traversal from completely breaking for rays starting outside tree
+	/* Safety clamp */
 	float3 pos = clamp(origin, 1.0f, 1.9999999f);
 	float3 inv_dir = 1.0 / -fabs(dir);
 
@@ -173,17 +174,22 @@ float Svt64::trace(const Ray& ray) const
 	for (i = 0; i < 256; i++) {
 		uint child_index = get_node_cell_index(pos, scale_exp) ^ mirror_mask;
 
-		// Descend
+		/* Descend down the tree */
 		while ((node.child_mask >> child_index & 1) != 0 && !node.is_leaf()) {
+			/* Push the current node on the stack (at `scale_exp / 2`) */
 			stack[scale_exp >> 1] = node_index;
 
+			/* Fetch the child node */
 			node_index = node.child_ptr + popcnt_var64(node.child_mask, child_index);
 			node = nodes[node_index];
 
+			/* Decrease the scale & get the next child index */
 			scale_exp -= 2;
 			child_index = get_node_cell_index(pos, scale_exp) ^ mirror_mask;
 		}
-		if ((node.child_mask >> child_index & 1) != 0 && node.is_leaf()) break;
+
+		/* If this node is a leaf, check if we hit a voxel */
+		if (node.is_leaf() && (node.child_mask >> child_index & 1) != 0) break;
 
 		// 2³ steps
 		int adv_scale_exp = scale_exp;
