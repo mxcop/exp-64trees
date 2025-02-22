@@ -3,8 +3,16 @@
 class Svt64;
 struct RawVoxels;
 
+#include "ogt_vox.h"
+
 namespace Tmpl8
 {
+
+enum class DisplayMode : int {
+	eAlbedo,
+	eDepth,
+	eSteps
+};
 
 class Renderer : public TheApp
 {
@@ -25,8 +33,10 @@ public:
 	// data members
 	int2 mousePos;
 	RawVoxels* voxel_data = nullptr;
+	ogt_vox_palette palette{};
 	Svt64* tree = nullptr;
 	Camera camera;
+	DisplayMode display_mode = DisplayMode::eAlbedo;
 	bool animating = true;
 	float anim_time = 0;
 };

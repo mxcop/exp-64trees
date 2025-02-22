@@ -137,14 +137,14 @@ float2 intersect_aabb(float3 origin, float3 invDir, float3 bbMin, float3 bbMax) 
 	float3 temp = t0;
 	t0 = fminf(temp, t1), t1 = fmaxf(temp, t1);
 
-	float tmin = fmaxf(fmaxf(t0.x, t0.y), t0.z);
+	float tmin = fmaxf(fmaxf(fmaxf(t0.x, t0.y), t0.z), 0.0f);
 	float tmax = fminf(fminf(t1.x, t1.y), t1.z);
 
 	return float2(tmin, tmax);
 }
 
 /* Credit: <https://dubiousconst282.github.io/2024/10/03/voxel-ray-tracing/> */
-float Svt64::trace(const Ray& ray) const
+VoxelHit Svt64::trace(const Ray& ray) const
 {
 	/* Traversal state */
 	uint stack[11]{};
@@ -153,7 +153,7 @@ float Svt64::trace(const Ray& ray) const
 	Node node = nodes[node_index];
 
 	const float2 hit = intersect_aabb(ray.O, ray.rD, float3(1.0f), float3(2.0f));
-	if (hit.y < hit.x) return 1e30f;
+	if (hit.y < hit.x) return VoxelHit(1e30f, 0x00, 1u);
 
 	const float3 origin = mirror_pos(ray.O + ray.D * hit.x, ray.D);
 	const float3 dir = ray.D;
@@ -174,13 +174,13 @@ float Svt64::trace(const Ray& ray) const
 	for (i = 0; i < 256; i++) {
 		uint child_index = get_node_cell_index(pos, scale_exp) ^ mirror_mask;
 
-		/* Descend down the tree */
+		/* Descend down the tree until we find an empty node or leaf node */
 		while ((node.child_mask >> child_index & 1) != 0 && !node.is_leaf()) {
 			/* Push the current node on the stack (at `scale_exp / 2`) */
 			stack[scale_exp >> 1] = node_index;
 
 			/* Fetch the child node */
-			node_index = node.child_ptr + popcnt_var64(node.child_mask, child_index);
+			node_index = node.abs_ptr() + popcnt_var64(node.child_mask, child_index);
 			node = nodes[node_index];
 
 			/* Decrease the scale & get the next child index */
@@ -203,36 +203,41 @@ float Svt64::trace(const Ray& ray) const
 
 		const int3 cell_min_i = int3((int&)cell_min.x, (int&)cell_min.y, (int&)cell_min.z);
 
-		int3 neighbor_max = cell_min_i; // +select(side_dist == tmax, -1, (1 << adv_scale_exp) - 1);
+		int3 neighbor_max = cell_min_i;
 		neighbor_max.x += side_dist.x == tmax ? -1 : (1 << adv_scale_exp) - 1;
 		neighbor_max.y += side_dist.y == tmax ? -1 : (1 << adv_scale_exp) - 1;
 		neighbor_max.z += side_dist.z == tmax ? -1 : (1 << adv_scale_exp) - 1;
 
+		/* Move to the entry point of our neighbour */
 		pos = fminf(origin - fabs(dir) * tmax, (float3&)neighbor_max);
 
-		// Find common ancestor based on left-most carry bit
-		// We only care about changes in the exponent and high bits of
-		// each cell position (10'10'10'...), so the odd bits are masked.
-		uint3 diff_pos = uint3((uint&)pos.x ^ (uint&)cell_min.x, (uint&)pos.y ^ (uint&)cell_min.y, (uint&)pos.z ^ (uint&)cell_min.z); // asuint(pos) ^ asuint(cell_min);
-		int diff_exp = 31 - _lzcnt_u32((diff_pos.x | diff_pos.y | diff_pos.z) & 0xFFAAAAAA); // 31 - lzcnt, or findMSB in GLSL
+		/* Find the first common ancestor node based on left-most carry bit */
+		const uint3 diff_pos = uint3((uint&)pos.x ^ (uint&)cell_min.x, (uint&)pos.y ^ (uint&)cell_min.y, (uint&)pos.z ^ (uint&)cell_min.z);
+		const int diff_exp = 31 - _lzcnt_u32((diff_pos.x | diff_pos.y | diff_pos.z) & 0xFFAAAAAA);
 
+		/* Traverse back up the tree if we need to */
 		if (diff_exp > scale_exp) {
+			/* Break if we're exiting the root node */
 			scale_exp = diff_exp;
-			if (diff_exp > 21) break;  // going out of root?
+			if (diff_exp > 21) break;
 
+			/* Read the first common ancestor node from the stack */
 			node_index = stack[scale_exp >> 1];
 			node = nodes[node_index];
 		}
 	}
 
-	return (float)i + 1;
-
+	/* If we ended in a leaf, we can gather the hit data we need */
 	if (node.is_leaf() && scale_exp <= 21) {
 		pos = mirror_pos(pos, dir);
+		const float t = hit.x + length(pos - origin);
 
-		return hit.x + length(pos - origin);
+		const uint child_index = get_node_cell_index(pos, scale_exp);
+		const uint8_t mat = voxels[node.abs_ptr() + popcnt_var64(node.child_mask, child_index)];
+
+		return VoxelHit(t, mat, (uint16_t)i + 1u);
 	}
-	return 1e30f;
+	return VoxelHit(1e30f, 0x00u, (uint16_t)i + 1u);
 }
 
 Svt64::~Svt64()

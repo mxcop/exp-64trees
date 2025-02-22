@@ -10,6 +10,15 @@ struct RawVoxels {
 	RawVoxels(uint8_t* raw_data, int w, int h, int d) : raw_data(raw_data), w(w), h(h), d(d) {};
 };
 
+struct VoxelHit {
+	float t = 1e30f;
+	uint8_t material = 0u;
+	uint16_t steps = 0u;
+
+	VoxelHit() = default;
+	VoxelHit(float t, uint8_t mat, uint16_t steps) : t(t), material(mat), steps(steps) {};
+};
+
 /* 64-wide Sparse Voxel Tree. */
 class Svt64 {
 	struct Node {
@@ -48,5 +57,5 @@ public:
 	/* Build the Sparse Voxel Tree. */
 	void build(const RawVoxels& raw_data);
 
-	float trace(const Ray& ray) const;
+	VoxelHit trace(const Ray& ray) const;
 };

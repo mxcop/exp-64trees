@@ -28,6 +28,7 @@ void Renderer::Init() {
 	const uint32_t height = scene->models[0]->size_y;
 	const uint32_t depth = scene->models[0]->size_z;
 	const uint32_t voxel_cnt = width * height * depth;
+	palette = scene->palette;
 
 	uint8_t* raw_data = new uint8_t[voxel_cnt]{};
 
@@ -72,10 +73,24 @@ inline float3 heat_color(float t) {
 /* Trace a ray. */
 float3 Renderer::Trace(Ray& ray)
 {
-	const float dist = tree->trace(ray);
+	const VoxelHit hit = tree->trace(ray);
 
-	if (dist < 1e30f) return heat_color(dist / 32.0f);
-	else return float3(0.05f, 0.05f, 0.05f);
+	switch (display_mode) {
+	case DisplayMode::eAlbedo: {
+		if (hit.t < 1e30f) {
+			const ogt_vox_rgba albedo = palette.color[hit.material];
+			return float3((float)albedo.r / 255.0f, (float)albedo.g / 255.0f, (float)albedo.b / 255.0f);
+		}
+		break;
+	}
+	case DisplayMode::eDepth: {
+		return float3(1.0f - hit.t * 0.2f);
+	}
+	case DisplayMode::eSteps:
+		return heat_color((float)hit.steps / 32.0f);
+	}
+
+	return float3(0.05f, 0.05f, 0.05f);
 }
 
 /* Called once per frame. */
@@ -119,12 +134,11 @@ void Renderer::Tick(float deltaTime)
 /* ImGUI tick. */
 void Renderer::UI()
 {
-	// animation toggle
-	// ImGui::Checkbox( "Animate scene", &animating );
-	// ray query on mouse
-	// Ray r = camera.GetPrimaryRay( (float)mousePos.x, (float)mousePos.y );
-	// scene.FindNearest( r );
-	// ImGui::Text( "Object id: %i", r.objIdx );
+	if (ImGui::Begin("Debug")) {
+		const char* modes[] = { "Albedo", "Depth", "Steps" };
+		ImGui::Combo("Display Mode", (int*)&display_mode, modes, IM_ARRAYSIZE(modes));
+	}
+	ImGui::End();
 }
 
 void Renderer::Shutdown()
