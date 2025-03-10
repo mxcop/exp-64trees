@@ -1,9 +1,8 @@
 #pragma once
 
 class Svt64;
-struct RawVoxels;
 
-#include "ogt_vox.h"
+#include "voxel-data.h"
 
 namespace Tmpl8
 {
@@ -11,6 +10,7 @@ namespace Tmpl8
 enum class DisplayMode : int {
 	eAlbedo,
 	eDepth,
+	eNormal,
 	eSteps
 };
 
@@ -31,9 +31,9 @@ public:
 	void KeyUp( int key ) { /* implement if you want to handle keys */ }
 	void KeyDown( int key ) { /* implement if you want to handle keys */ }
 	// data members
+	uint seed = 1923674u;
 	int2 mousePos;
-	RawVoxels* voxel_data = nullptr;
-	ogt_vox_palette palette{};
+	RawVoxels voxel_data{};
 	Svt64* tree = nullptr;
 	Camera camera;
 	DisplayMode display_mode = DisplayMode::eAlbedo;

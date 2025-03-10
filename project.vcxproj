@@ -132,6 +132,7 @@
     <ClCompile Include="lib\imgui\imgui_impl_opengl3.cpp" />
     <ClCompile Include="lib\imgui\imgui_tables.cpp" />
     <ClCompile Include="lib\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="src\voxel-data.cpp" />
     <ClCompile Include="template\opengl.cpp" />
     <ClCompile Include="template\surface.cpp" />
     <ClCompile Include="template\template.cpp">
@@ -153,6 +154,8 @@
     <ClInclude Include="lib\imgui\imstb_textedit.h" />
     <ClInclude Include="lib\imgui\imstb_truetype.h" />
     <ClInclude Include="lib\ogt_vox.h" />
+    <ClInclude Include="src\svm8.h" />
+    <ClInclude Include="src\voxel-data.h" />
     <ClInclude Include="template\camera.h" />
     <ClInclude Include="template\common.h" />
     <ClInclude Include="template\opengl.h" />

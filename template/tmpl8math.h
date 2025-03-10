@@ -1003,6 +1003,15 @@ inline float3 diffusereflection( const float3 N, uint& seed )
 	return normalize( R );
 }
 
+inline float3 random_unit_vector(uint& seed) {
+	float z = RandomFloat(seed) * 2.0f - 1.0f;
+	float a = RandomFloat(seed) * 6.283185f;
+	float r = sqrt(1.0f - z * z);
+	float x = r * cos(a);
+	float y = r * sin(a);
+	return float3(x, y, z);
+}
+
 inline float3 cosineweighteddiffusereflection( const float3 N, uint& seed )
 {
 	// blog.demofox.org/2020/06/06/casual-shadertoy-path-tracing-2-image-improvement-and-glossy-reflections

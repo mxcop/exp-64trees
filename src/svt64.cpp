@@ -38,9 +38,9 @@ Svt64::Node Svt64::subdivide(const RawVoxels& raw_data, int scale, int3 index)
 			const int voxel_y = index.y + ((i >> 4) & 3);
 			const int voxel_z = index.z + ((i >> 2) & 3);
 			const int voxel_offset = voxel_z * wh + voxel_y * raw_data.w + voxel_x;
-			const uint8_t voxel = raw_data.raw_data[voxel_offset];
+			const Voxel& voxel = raw_data.raw_data[voxel_offset];
 
-			if (voxel != 0x00) {
+			if (voxel.albedo_a != 0x00) {
 				voxels[voxel_count++] = voxel;
 				leaf_node.child_mask |= (1ull << i);
 			}
@@ -87,7 +87,7 @@ void Svt64::build(const RawVoxels& raw_data)
 	/* Allocate space for new tree */
 	nodes = (Node*)malloc(1ull << 24);
 	node_count = 1u;
-	voxels = (uint8_t*)malloc(1ull << 24);
+	voxels = (Voxel*)malloc(1ull << 24);
 	voxel_count = 0u;
 
 	/* Required tree depth */
@@ -147,6 +147,10 @@ inline float2 intersect_aabb(const float3 origin, const float3 invDir, const flo
 	return float2(tmin, tmax);
 }
 
+inline float sign(const float f) {
+	return f >= 0.0f ? 1.0f : -1.0f;
+}
+
 /* Credit: <https://dubiousconst282.github.io/2024/10/03/voxel-ray-tracing/> */
 VoxelHit Svt64::trace(const Ray& ray) const
 {
@@ -157,7 +161,7 @@ VoxelHit Svt64::trace(const Ray& ray) const
 	Node node = nodes[node_index];
 
 	const float2 hit = intersect_aabb(ray.O, ray.rD, float3(1.0f), float3(2.0f));
-	if (hit.y < hit.x) return VoxelHit(1e30f, 0x00, 1u);
+	if (hit.y < hit.x) return VoxelHit(1e30f, 0.0f, VOXEL_EMPTY, 1u);
 
 	const float3 origin = mirror_pos(ray.O + ray.D * hit.x, ray.D);
 	const float3 dir = ray.D;
@@ -172,7 +176,7 @@ VoxelHit Svt64::trace(const Ray& ray) const
 	float3 pos = clamp(origin, 1.0f, 1.9999999f);
 	float3 inv_dir = 1.0f / -fabs(dir);
 
-	float3 side_dist{};
+	float3 side_dist = 0.0f;
 	int i = 0;
 
 	for (i = 0; i < 256; i++) {
@@ -234,14 +238,33 @@ VoxelHit Svt64::trace(const Ray& ray) const
 	/* If we ended in a leaf, we can gather the hit data we need */
 	if (node.is_leaf() && scale_exp <= 21) {
 		pos = mirror_pos(pos, dir);
-		const float t = hit.x + length(pos - origin);
+		const float t = length(pos - ray.O);
 
 		const uint child_index = get_node_cell_index(pos, scale_exp);
-		const uint8_t mat = voxels[node.abs_ptr() + popcnt_var64(node.child_mask, child_index)];
+		const Voxel mat = voxels[node.abs_ptr() + popcnt_var64(node.child_mask, child_index)];
 
-		return VoxelHit(t, mat, (uint16_t)i + 1u);
+		// float tmax = min(min(sideDist.x, sideDist.y), sideDist.z);
+		// bool3 sideMask = tmax >= sideDist;
+		// hit.Normal = select(sideMask, -sign(dir), 0.0);
+		// const float tmax = fminf(fminf(side_dist.x, side_dist.y), side_dist.z);
+		float3 normal = 0.0f;
+		if (side_dist.x < side_dist.y) {
+			if (side_dist.x < side_dist.z) {
+				normal.x = -sign(dir.x);
+			} else {
+				normal.z = -sign(dir.z);
+			}
+		} else {
+			if (side_dist.y < side_dist.z) {
+				normal.y = -sign(dir.y);
+			} else {
+				normal.z = -sign(dir.z);
+			}
+		}
+
+		return VoxelHit(t, normal, mat, (uint16_t)i + 1u);
 	}
-	return VoxelHit(1e30f, 0x00u, (uint16_t)i + 1u);
+	return VoxelHit(1e30f, 0.0f, VOXEL_EMPTY, (uint16_t)i + 1u);
 }
 
 Svt64::~Svt64()

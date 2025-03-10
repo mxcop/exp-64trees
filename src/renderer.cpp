@@ -2,57 +2,17 @@
 
 #include "svt64.h"
 
-#define OGT_VOX_IMPLEMENTATION
-#include "ogt_vox.h"
-
 constexpr uint32_t GRID_SIZE = 64u;
 constexpr uint32_t CELL_COUNT = GRID_SIZE * GRID_SIZE * GRID_SIZE;
 
-std::vector<std::byte> read_binary_file(const std::string& path) {
-	std::ifstream file(path, std::ios::binary | std::ios::ate);
-	if (!file.is_open()) return {};
-	const std::streamsize size = file.tellg();
-	file.seekg(0, std::ios::beg);
-	std::vector<std::byte> buffer(size);
-	file.read(reinterpret_cast<char*>(buffer.data()), size);
-	return buffer;
-}
-
 /* Called once on init. */
 void Renderer::Init() {
-	auto binary = read_binary_file("assets/dragon.vox");
-	const ogt_vox_scene* scene = ogt_vox_read_scene((uint8_t*)binary.data(), binary.size());
-
-	printf("loaded model with size: %u, %u, %u\n", scene->models[0]->size_x, scene->models[0]->size_y, scene->models[0]->size_z);
-	const uint32_t width = scene->models[0]->size_x;
-	const uint32_t height = scene->models[0]->size_y;
-	const uint32_t depth = scene->models[0]->size_z;
-	const uint32_t voxel_cnt = width * height * depth;
-	palette = scene->palette;
-
-	uint8_t* raw_data = new uint8_t[voxel_cnt]{};
-
-	for (uint z = 0; z < height; z++) {
-		for (uint y = 0; y < depth; y++) {
-			for (uint x = 0; x < width; x++) {
-				// .vox model axes are weird...
-				const uint write_index = z * depth * width + y * width + x;
-				const uint read_index = y * height * width + (height - z - 1) * width + x;
-
-				raw_data[write_index] = scene->models[0]->voxel_data[read_index];
-			}
-		}
-	}
-
-	// for (int i = 0; i < voxel_cnt; ++i) raw_data[i] = scene->models[0]->voxel_data[i];
-	voxel_data = new RawVoxels(raw_data, width, height, depth);
-
-	ogt_vox_destroy_scene(scene);
+	voxel_data = RawVoxels::from_file("assets/dragon.vox");
 
 	tree = new Svt64();
 
 	//Timer t;
-	tree->build(*voxel_data);
+	tree->build(voxel_data);
 	//const float ms = t.elapsed() * 1000.0f;
 
 	//printf("tree build time: %5.2fms\n", ms);
@@ -78,14 +38,27 @@ float3 Renderer::Trace(Ray& ray)
 	switch (display_mode) {
 	case DisplayMode::eAlbedo: {
 		if (hit.t < 1e30f) {
-			const ogt_vox_rgba albedo = palette.color[hit.material];
-			return float3((float)albedo.r / 255.0f, (float)albedo.g / 255.0f, (float)albedo.b / 255.0f);
+
+			float irradiance = 1.0f;
+			//float irradiance = 0.0f;
+			//const float3 hit_point = ray.O + ray.D * (hit.t - 0.001f);
+
+			//for (int i = 0; i < 8; ++i) {
+			//	const float3 bounce_dir = normalize(hit.normal + random_unit_vector(seed));
+			//	const VoxelHit bounce_hit = tree->trace(Ray(hit_point, bounce_dir));
+			//	irradiance += bounce_hit.t < 1e30f ? 0.0f : 1.0f;
+			//}
+			//irradiance *= (1.0f / 8.0f);
+
+			const Voxel v = hit.material;
+			return float3((float)v.albedo_r / 255.0f, (float)v.albedo_g / 255.0f, (float)v.albedo_b / 255.0f) * irradiance;
 		}
 		break;
 	}
-	case DisplayMode::eDepth: {
+	case DisplayMode::eDepth:
 		return float3(1.0f - hit.t * 0.2f);
-	}
+	case DisplayMode::eNormal:
+		return hit.normal * 0.5f + 0.5f;
 	case DisplayMode::eSteps:
 		return heat_color((float)hit.steps / 32.0f);
 	}
@@ -135,7 +108,7 @@ void Renderer::Tick(float deltaTime)
 void Renderer::UI()
 {
 	if (ImGui::Begin("Debug")) {
-		const char* modes[] = { "Albedo", "Depth", "Steps" };
+		const char* modes[] = { "Albedo", "Depth", "Normal", "Steps"};
 		ImGui::Combo("Display Mode", (int*)&display_mode, modes, IM_ARRAYSIZE(modes));
 	}
 	ImGui::End();

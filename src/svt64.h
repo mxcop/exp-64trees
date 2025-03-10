@@ -2,21 +2,16 @@
 
 #include <cstdint>
 
-/* Raw voxel data. */
-struct RawVoxels {
-	uint8_t* raw_data = nullptr; 
-	int w = 0u, h = 0u, d = 0u;
-
-	RawVoxels(uint8_t* raw_data, int w, int h, int d) : raw_data(raw_data), w(w), h(h), d(d) {};
-};
+#include "voxel-data.h"
 
 struct VoxelHit {
 	float t = 1e30f;
-	uint8_t material = 0u;
+	float3 normal = 0.0f;
+	Voxel material{};
 	uint16_t steps = 0u;
 
 	VoxelHit() = default;
-	VoxelHit(float t, uint8_t mat, uint16_t steps) : t(t), material(mat), steps(steps) {};
+	VoxelHit(float t, float3 normal, Voxel mat, uint16_t steps) : t(t), normal(normal), material(mat), steps(steps) {};
 };
 
 /* 64-wide Sparse Voxel Tree. */
@@ -44,7 +39,7 @@ class Svt64 {
 	Node* nodes = nullptr;
 	uint32_t node_count = 0u;
 	/* List of voxel data. */
-	uint8_t* voxels = nullptr;
+	Voxel* voxels = nullptr;
 	uint32_t voxel_count = 0u;
 
 	/* Recursive tree subdivide function. */
