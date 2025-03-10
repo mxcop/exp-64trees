@@ -1,5 +1,6 @@
 #pragma once
 
+class Svb8;
 class Svt64;
 
 #include "voxel-data.h"
@@ -34,6 +35,7 @@ public:
 	uint seed = 1923674u;
 	int2 mousePos;
 	RawVoxels voxel_data{};
+	Svb8* brickmap = nullptr;
 	Svt64* tree = nullptr;
 	Camera camera;
 	DisplayMode display_mode = DisplayMode::eAlbedo;

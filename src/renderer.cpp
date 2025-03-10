@@ -1,6 +1,7 @@
 #include "precomp.h"
 
 #include "svt64.h"
+#include "svb8.h"
 
 constexpr uint32_t GRID_SIZE = 64u;
 constexpr uint32_t CELL_COUNT = GRID_SIZE * GRID_SIZE * GRID_SIZE;
@@ -9,13 +10,21 @@ constexpr uint32_t CELL_COUNT = GRID_SIZE * GRID_SIZE * GRID_SIZE;
 void Renderer::Init() {
 	voxel_data = RawVoxels::from_file("assets/dragon.vox");
 
+	brickmap = new Svb8();
+	brickmap->init(voxel_data.w / 8u, voxel_data.h / 8u, voxel_data.d / 8u);
+
+	for (uint32_t z = 0u; z < voxel_data.d; ++z) {
+		for (uint32_t y = 0u; y < voxel_data.h; ++y) {
+			for (uint32_t x = 0u; x < voxel_data.w; ++x) {
+				brickmap->set_voxel(x, y, z, voxel_data.raw_data[x + y * voxel_data.w + z * voxel_data.w * voxel_data.h]);
+			}
+		}
+	}
+
+	printf("brickmap memory usage: %llu bytes\n", brickmap->memory_usage());
+
 	tree = new Svt64();
-
-	//Timer t;
 	tree->build(voxel_data);
-	//const float ms = t.elapsed() * 1000.0f;
-
-	//printf("tree build time: %5.2fms\n", ms);
 }
 
 inline float3 heat_color(float t) {

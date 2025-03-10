@@ -8,6 +8,9 @@ struct Voxel {
 	uint32_t albedo_g : 8;
 	uint32_t albedo_b : 8;
 	uint32_t albedo_a : 8;
+
+	/* Is this voxel empty? */
+	inline bool is_empty() const { return albedo_a == 0u; };
 };
 
 constexpr Voxel VOXEL_EMPTY = Voxel();
