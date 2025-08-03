@@ -25,8 +25,8 @@ public:
 	void UI();
 	void Shutdown();
 	// input handling
-	void MouseUp( int button ) { /* implement if you want to detect mouse button presses */ }
-	void MouseDown( int button );
+	void MouseUp(int button) { if (button == 0) lmb = false; }
+	void MouseDown( int button ) { if (button == 0) lmb = true; }
 	void MouseMove( int x, int y ) { mousePos.x = x, mousePos.y = y; }
 	void MouseWheel( float y ) { /* implement if you want to handle the mouse wheel */ }
 	void KeyUp( int key ) { /* implement if you want to handle keys */ }
@@ -40,6 +40,7 @@ public:
 	Camera camera;
 	DisplayMode display_mode = DisplayMode::eAlbedo;
 	bool animating = true;
+	bool lmb = false;
 	float anim_time = 0;
 };
 

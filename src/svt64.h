@@ -42,6 +42,8 @@ class Svt64 {
 	Voxel* voxels = nullptr;
 	uint32_t voxel_count = 0u;
 	uint32_t req_depth = 0u;
+	/* Number of wasted bytes. */
+	uint32_t wasted_count = 0u;
 
 	/* Recursive tree subdivide function. */
 	Node subdivide(const RawVoxels& raw_data, int scale, int3 index);
@@ -55,6 +57,8 @@ public:
 
 	/* Get the current memory usage of the 64tree. */
 	uint64_t memory_usage() const;
+	/* Get the current wasted memory of the 64tree. */
+	uint64_t wasted_memory() const;
 
 	VoxelHit trace(const Ray& ray) const;
 

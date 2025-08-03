@@ -155,6 +155,10 @@ uint64_t Svt64::memory_usage() const {
 	return node_count * sizeof(Node) + voxel_count * sizeof(Voxel);
 }
 
+uint64_t Svt64::wasted_memory() const {
+	return wasted_count;
+}
+
 /* Credit: <https://dubiousconst282.github.io/2024/10/03/voxel-ray-tracing/> */
 VoxelHit Svt64::trace(const Ray& ray) const {
 	/* Traversal state */
@@ -289,6 +293,7 @@ void Svt64::set_voxel(uint32_t x, uint32_t y, uint32_t z) {
 		/* If the child doesn't exist yet, create it */
 		if ((node.child_mask & lm) == 0ull) {
 			const uint32_t prev_child_index = node.abs_ptr();
+			wasted_count += popcnt_var64(node.child_mask, 64u) * sizeof(Node);
 			node = Node(false, node_count, node.child_mask | lm);
 
 			for (int i = 0, j = 0; i < 64; ++i) {
@@ -321,6 +326,7 @@ void Svt64::set_voxel(uint32_t x, uint32_t y, uint32_t z) {
 	/* If the voxel doesn't exist yet, create it */
 	if ((node.child_mask & lm) == 0ull) {
 		const uint32_t prev_voxel_index = node.abs_ptr();
+		wasted_count += popcnt_var64(node.child_mask, 64u) * sizeof(Voxel);
 
 		Voxel voxel {};
 		voxel.albedo_r = 0xFF;

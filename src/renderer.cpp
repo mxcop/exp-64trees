@@ -154,11 +154,35 @@ void Renderer::Tick(float deltaTime)
 }
 
 /* ImGUI tick. */
-void Renderer::UI()
-{
+void Renderer::UI() {
+	if (lmb) {
+		const Ray ray = camera.GetPrimaryRay((float)mousePos.x, (float)mousePos.y);
+		const VoxelHit hit = tree->trace(ray);
+
+		if (hit.t != 1e30f) {
+			const float3 hit_pos = ray.O + ray.D * (hit.t - 0.001f);
+			const uint3 hit_index = uint3((hit_pos - 1.0f) * float3(voxel_data.w, voxel_data.h, voxel_data.d));
+			// printf("hit pos: %u, %u, %u\n", hit_index.x, hit_index.y, hit_index.z);
+			//Timer t; /* frame timer. */
+			tree->set_voxel(hit_index.x, hit_index.y, hit_index.z);
+			//static float avg = 10, alpha = 1;
+			//avg = (1 - alpha) * avg + alpha * t.elapsed() * 1000000;
+			//if (alpha > 0.05f) alpha *= 0.5f;
+			//printf("set voxel time: %5.2fus\n", avg);
+		}
+	}
+
 	if (ImGui::Begin("Debug")) {
 		const char* modes[] = { "Albedo", "Depth", "Normal", "Steps"};
 		ImGui::Combo("Display Mode", (int*)&display_mode, modes, IM_ARRAYSIZE(modes));
+
+		ImGui::Separator();
+		const uint64_t raw_memory = (uint64_t)voxel_data.w * voxel_data.h * voxel_data.d * sizeof(Voxel);
+		const uint64_t svt64_memory = tree->memory_usage();
+		const uint64_t svt64_wasted = tree->wasted_memory();
+		ImGui::Text("[raw] memory usage: %.2fMB\n", (float)raw_memory / 1000000);
+		ImGui::Text("[64tree] memory usage: %.2fMB (%.2f%%)\n", (float)svt64_memory / 1000000, (float)svt64_memory / (float)raw_memory * 100.0f);
+		ImGui::Text("[64tree] wasted memory: %.2fMB (%.2f%%)\n", (float)svt64_wasted / 1000000, (float)svt64_wasted / (float)svt64_memory * 100.0f);
 	}
 	ImGui::End();
 }
@@ -166,16 +190,4 @@ void Renderer::UI()
 void Renderer::Shutdown()
 {
 	delete tree;
-}
-
-void Renderer::MouseDown(int button) {
-	const Ray ray = camera.GetPrimaryRay((float)mousePos.x, (float)mousePos.y);
-	const VoxelHit hit = tree->trace(ray);
-
-	if (hit.t != 1e30f) {
-		const float3 hit_pos = ray.O + ray.D * (hit.t - 0.001f);
-		const uint3 hit_index = uint3((hit_pos - 1.0f) * float3(voxel_data.w, voxel_data.h, voxel_data.d));
-		printf("hit pos: %u, %u, %u\n", hit_index.x, hit_index.y, hit_index.z);
-		tree->set_voxel(hit_index.x, hit_index.y, hit_index.z);
-	}
 }
