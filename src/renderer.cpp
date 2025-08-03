@@ -21,10 +21,15 @@ void Renderer::Init() {
 		}
 	}
 
-	printf("brickmap memory usage: %llu bytes\n", brickmap->memory_usage());
+	const uint64_t raw_memory = (uint64_t)voxel_data.w * voxel_data.h * voxel_data.d * sizeof(Voxel);
+	const uint64_t bm_memory = brickmap->memory_usage();
+	printf("[raw] memory usage: %.2fMB\n", (float)raw_memory / 1000000);
+	printf("[brickmap] memory usage: %.2fMB (%.2f%%)\n", (float)bm_memory / 1000000, (float)bm_memory / (float)raw_memory * 100.0f);
 
 	tree = new Svt64();
 	tree->build(voxel_data);
+	const uint64_t svt64_memory = tree->memory_usage();
+	printf("[64tree] memory usage: %.2fMB (%.2f%%)\n", (float)svt64_memory / 1000000, (float)svt64_memory / (float)raw_memory * 100.0f);
 }
 
 inline float3 heat_color(float t) {
@@ -80,11 +85,46 @@ void Renderer::Tick(float deltaTime)
 {
 	//{ /* Build and time tree */
 	//	Timer t; 
-	//	tree->build(*voxel_data);
+	//	tree->build(voxel_data);
 	//	static float avg = 10, alpha = 1;
 	//	avg = (1 - alpha) * avg + alpha * t.elapsed() * 1000;
 	//	if (alpha > 0.05f) alpha *= 0.5f;
 	//	printf("tree build time: %5.2fms\n", avg);
+	//}
+
+	//{ /* Build and time brickmap */
+	//	Timer t;
+	//	brickmap->init(voxel_data.w / 8u, voxel_data.h / 8u, voxel_data.d / 8u);
+
+	//	//for (uint32_t bz = 0u; bz < voxel_data.d / 8; ++bz) {
+	//	//	for (uint32_t by = 0u; by < voxel_data.h / 8; ++by) {
+	//	//		for (uint32_t bx = 0u; bx < voxel_data.w / 8; ++bx) {
+
+	//	//			for (uint32_t vz = 0u; vz < 8; ++vz) {
+	//	//				for (uint32_t vy = 0u; vy < 8; ++vy) {
+	//	//					for (uint32_t vx = 0u; vx < 8; ++vx) {
+	//	//						const uint32_t z = bz * 8 + vz;
+	//	//						const uint32_t y = by * 8 + vy;
+	//	//						const uint32_t x = bx * 8 + vx;
+	//	//						brickmap->set_voxel(x, y, z, voxel_data.raw_data[x + y * voxel_data.w + z * voxel_data.w * voxel_data.h]);
+	//	//					}
+	//	//				}
+	//	//			}
+
+	//	//		}
+	//	//	}
+	//	//}
+	//	for (uint32_t z = 0u; z < voxel_data.d; ++z) {
+	//		for (uint32_t y = 0u; y < voxel_data.h; ++y) {
+	//			for (uint32_t x = 0u; x < voxel_data.w; ++x) {
+	//				brickmap->set_voxel(x, y, z, voxel_data.raw_data[x + y * voxel_data.w + z * voxel_data.w * voxel_data.h]);
+	//			}
+	//		}
+	//	}
+	//	static float avg = 10, alpha = 1;
+	//	avg = (1 - alpha) * avg + alpha * t.elapsed() * 1000;
+	//	if (alpha > 0.05f) alpha *= 0.5f;
+	//	printf("brickmap build time: %5.2fms\n", avg);
 	//}
 
 	Timer t; /* frame timer. */
@@ -126,4 +166,16 @@ void Renderer::UI()
 void Renderer::Shutdown()
 {
 	delete tree;
+}
+
+void Renderer::MouseDown(int button) {
+	const Ray ray = camera.GetPrimaryRay((float)mousePos.x, (float)mousePos.y);
+	const VoxelHit hit = tree->trace(ray);
+
+	if (hit.t != 1e30f) {
+		const float3 hit_pos = ray.O + ray.D * (hit.t - 0.001f);
+		const uint3 hit_index = uint3((hit_pos - 1.0f) * float3(voxel_data.w, voxel_data.h, voxel_data.d));
+		printf("hit pos: %u, %u, %u\n", hit_index.x, hit_index.y, hit_index.z);
+		tree->set_voxel(hit_index.x, hit_index.y, hit_index.z);
+	}
 }

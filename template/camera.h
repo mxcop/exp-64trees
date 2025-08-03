@@ -7,11 +7,19 @@ public:
 	Camera()
 	{
 		// setup a basic view frustum
-		camPos = float3( 0, 0, -2 );
-		camTarget = float3( 0, 0, -1 );
-		topLeft = float3( -aspect, 1, 0 );
-		topRight = float3( aspect, 1, 0 );
-		bottomLeft = float3( -aspect, -1, 0 );
+		camPos = float3(0.508979, 1.783545, 0.884068);
+		camTarget = float3(1.317945, 1.386426, 1.317510);
+		float3 ahead = normalize(camTarget - camPos);
+		float3 tmpUp(0, 1, 0);
+		float3 right = normalize(cross(tmpUp, ahead));
+		float3 up = normalize(cross(ahead, right));
+		camTarget = camPos + ahead;
+		ahead = normalize(camTarget - camPos);
+		up = normalize(cross(ahead, right));
+		right = normalize(cross(up, ahead));
+		topLeft = camPos + ahead * 2.0f - aspect * right + up;
+		topRight = camPos + ahead * 2.0f + aspect * right + up;
+		bottomLeft = camPos + ahead * 2.0f - aspect * right - up;
 	}
 	Ray GetPrimaryRay( const float x, const float y )
 	{
@@ -24,7 +32,7 @@ public:
 	bool HandleInput( const float t )
 	{
 		if (!WindowHasFocus()) return false;
-		float speed = 0.0025f * t;
+		float speed = 0.0005f * t;
 		float3 ahead = normalize( camTarget - camPos );
 		float3 tmpUp( 0, 1, 0 );
 		float3 right = normalize( cross( tmpUp, ahead ) );

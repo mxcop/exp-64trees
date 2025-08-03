@@ -41,6 +41,7 @@ class Svt64 {
 	/* List of voxel data. */
 	Voxel* voxels = nullptr;
 	uint32_t voxel_count = 0u;
+	uint32_t req_depth = 0u;
 
 	/* Recursive tree subdivide function. */
 	Node subdivide(const RawVoxels& raw_data, int scale, int3 index);
@@ -52,5 +53,10 @@ public:
 	/* Build the Sparse Voxel Tree. */
 	void build(const RawVoxels& raw_data);
 
+	/* Get the current memory usage of the 64tree. */
+	uint64_t memory_usage() const;
+
 	VoxelHit trace(const Ray& ray) const;
+
+	void set_voxel(uint32_t x, uint32_t y, uint32_t z);
 };

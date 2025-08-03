@@ -13,7 +13,7 @@ std::vector<std::byte> read_binary_file(const std::string& path);
 
 RawVoxels RawVoxels::from_file(const std::string_view path) {
 	/* Load the binary file data */
-	const std::vector<std::byte> binary = read_binary_file("assets/dragon.vox");
+	const std::vector<std::byte> binary = read_binary_file(std::string(path));
 	if (binary.empty() == true) return RawVoxels();
 
 	/* Parse the vox file data */

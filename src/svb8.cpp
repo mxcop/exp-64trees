@@ -5,7 +5,7 @@
 constexpr uint32_t BRICK_SIZE = 8u * 8u * 8u;
 
 /* Approximately 0.5mB (256 bricks) */
-constexpr uint32_t MIN_VOXEL_MEMORY = BRICK_SIZE * 256u;
+constexpr uint32_t MIN_VOXEL_MEMORY = BRICK_SIZE * 4096u;
 
 uint32_t Svb8::alloc_brick() {
 	/* Check if we're out of voxel memory */
@@ -77,6 +77,8 @@ void Svb8::clear() {
 }
 
 void Svb8::set_voxel(const uint32_t x, const uint32_t y, const uint32_t z, const Voxel& voxel) {
+	if (voxel.is_empty()) return;
+
 	/* Find the brick to edit */
 	const uint32_t bx = x >> 3u;
 	const uint32_t by = y >> 3u;
@@ -85,7 +87,6 @@ void Svb8::set_voxel(const uint32_t x, const uint32_t y, const uint32_t z, const
 
 	/* If the brick is empty, allocate it */
 	if (brick.is_empty()) {
-		if (voxel.is_empty()) return;
 		brick.handle = alloc_brick();
 	}
 

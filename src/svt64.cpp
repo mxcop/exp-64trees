@@ -85,24 +85,24 @@ void Svt64::build(const RawVoxels& raw_data)
 	if (voxels != nullptr) delete[] voxels;
 
 	/* Allocate space for new tree */
-	nodes = (Node*)malloc(1ull << 24);
+	nodes = (Node*)malloc(1ull << 26);
 	node_count = 1u;
-	voxels = (Voxel*)malloc(1ull << 24);
+	voxels = (Voxel*)malloc(1ull << 26);
 	voxel_count = 0u;
 
 	/* Required tree depth */
-	const uint32_t req_depth = log_base(max(max(raw_data.w, raw_data.h), raw_data.d), 4);
-	printf("required depth: %u\n", req_depth);
+	req_depth = log_base(max(max(raw_data.w, raw_data.h), raw_data.d), 4);
+	//printf("required depth: %u\n", req_depth);
 
 	/* Begin the recursive build */
 	nodes[0] = subdivide(raw_data, req_depth * 2, int3(0));
 
 	//printf("size: (%u, %u, %u), nodes: %u, voxels: %u\n", raw_data.w, raw_data.h, raw_data.d, node_count, voxel_count);
 
-	const uint64_t raw_size = raw_data.w * raw_data.h * raw_data.d;
-	const uint64_t tree_size = node_count * sizeof(Node) + voxel_count;
-	const float memory_percent = ((float)tree_size / (float)raw_size) * 100.0f;
-	printf("raw memory: %.2fMB, tree memory: %.2fMB (%.2f%%)\n", (float)raw_size / 1000000, (float)tree_size / 1000000, memory_percent);
+	//const uint64_t raw_size = raw_data.w * raw_data.h * raw_data.d;
+	//const uint64_t tree_size = node_count * sizeof(Node) + voxel_count;
+	//const float memory_percent = ((float)tree_size / (float)raw_size) * 100.0f;
+	//printf("raw memory: %.2fMB, tree memory: %.2fMB (%.2f%%)\n", (float)raw_size / 1000000, (float)tree_size / 1000000, memory_percent);
 }
 
 inline uint get_node_cell_index(const float3 pos, const int scale_exp) {
@@ -151,9 +151,12 @@ inline float sign(const float f) {
 	return f >= 0.0f ? 1.0f : -1.0f;
 }
 
+uint64_t Svt64::memory_usage() const {
+	return node_count * sizeof(Node) + voxel_count * sizeof(Voxel);
+}
+
 /* Credit: <https://dubiousconst282.github.io/2024/10/03/voxel-ray-tracing/> */
-VoxelHit Svt64::trace(const Ray& ray) const
-{
+VoxelHit Svt64::trace(const Ray& ray) const {
 	/* Traversal state */
 	uint stack[11]{};
 	int scale_exp = 21; /* 23 mantissa bits - 2 */
@@ -265,6 +268,80 @@ VoxelHit Svt64::trace(const Ray& ray) const
 		return VoxelHit(t, normal, mat, (uint16_t)i + 1u);
 	}
 	return VoxelHit(1e30f, 0.0f, VOXEL_EMPTY, (uint16_t)i + 1u);
+}
+
+void Svt64::set_voxel(uint32_t x, uint32_t y, uint32_t z) {
+	uint32_t node_index = 0u;
+	uint32_t scale = req_depth * 2u;
+
+	for (;;) {
+		Node& node = nodes[node_index];
+
+		if (node.is_leaf()) break;
+
+		scale -= 2u;
+		const uint32_t lx = (x >> scale) & 3u;
+		const uint32_t ly = (y >> scale) & 3u;
+		const uint32_t lz = (z >> scale) & 3u;
+		const uint32_t li = lx + ly * 16u + lz * 4u;
+		const uint64_t lm = 1ull << li;
+
+		/* If the child doesn't exist yet, create it */
+		if ((node.child_mask & lm) == 0ull) {
+			const uint32_t prev_child_index = node.abs_ptr();
+			node = Node(false, node_count, node.child_mask | lm);
+
+			for (int i = 0, j = 0; i < 64; ++i) {
+				const bool is_new = i == li;
+
+				if (is_new) {
+					/* Add new node */
+					nodes[node_count++] = Node(scale <= 4u, 0u, 0ull);
+				} else {
+					/* Copy over old node */
+					if (node.child_mask & (1ull << i)) {
+						nodes[node_count++] = nodes[prev_child_index + j];
+						j++;
+					}
+				}
+			}
+		}
+
+		node_index = node.abs_ptr() + popcnt_var64(node.child_mask, li);
+	}
+
+	Node& node = nodes[node_index];
+
+	const uint32_t lx = x & 3u;
+	const uint32_t ly = y & 3u;
+	const uint32_t lz = z & 3u;
+	const uint32_t li = lx + ly * 16u + lz * 4u;
+	const uint64_t lm = 1ull << li;
+
+	/* If the voxel doesn't exist yet, create it */
+	if ((node.child_mask & lm) == 0ull) {
+		const uint32_t prev_voxel_index = node.abs_ptr();
+
+		Voxel voxel {};
+		voxel.albedo_r = 0xFF;
+		voxel.albedo_a = 0xFF;
+
+		node = Node(true, voxel_count, node.child_mask | lm);
+		for (int i = 0, j = 0; i < 64; ++i) {
+			const bool is_new = i == li;
+
+			if (is_new) {
+				/* Add new voxel */
+				voxels[voxel_count++] = voxel;
+			} else {
+				/* Copy over old voxel */
+				if (node.child_mask & (1ull << i)) {
+					voxels[voxel_count++] = voxels[prev_voxel_index + j];
+					j++;
+				}
+			}
+		}
+	}
 }
 
 Svt64::~Svt64()
