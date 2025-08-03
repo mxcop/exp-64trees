@@ -296,7 +296,7 @@ void Svt64::set_voxel(uint32_t x, uint32_t y, uint32_t z) {
 
 				if (is_new) {
 					/* Add new node */
-					nodes[node_count++] = Node(scale <= 4u, 0u, 0ull);
+					nodes[node_count++] = Node(scale <= 2u, 0u, 0ull);
 				} else {
 					/* Copy over old node */
 					if (node.child_mask & (1ull << i)) {
