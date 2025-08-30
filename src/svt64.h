@@ -58,7 +58,7 @@ public:
 	/* Defragment the Tree. */
 	void defrag();
 
-	void defrag_recurse(uint32_t node_index, Node* old_nodes, Voxel* old_voxels);
+	void defrag_recurse(uint32_t old_index, uint32_t new_index, Node* new_nodes, Voxel* new_voxels);
 
 	/* Get the current memory usage of the 64tree. */
 	uint64_t memory_usage() const;
