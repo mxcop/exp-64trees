@@ -183,6 +183,12 @@ void Renderer::UI() {
 		ImGui::Text("[raw] memory usage: %.2fMB\n", (float)raw_memory / 1000000);
 		ImGui::Text("[64tree] memory usage: %.2fMB (%.2f%%)\n", (float)svt64_memory / 1000000, (float)svt64_memory / (float)raw_memory * 100.0f);
 		ImGui::Text("[64tree] wasted memory: %.2fMB (%.2f%%)\n", (float)svt64_wasted / 1000000, (float)svt64_wasted / (float)svt64_memory * 100.0f);
+
+		if (ImGui::Button("Defragment")) {
+			Timer t;
+			tree->defrag();
+			printf("defrag time: %5.2fus\n", t.elapsed() * 1000000);
+		}
 	}
 	ImGui::End();
 }
