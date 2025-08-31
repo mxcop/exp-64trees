@@ -367,6 +367,7 @@ void Svt64::defrag() {
 }
 
 void Svt64::defrag_recurse(uint32_t old_index, uint32_t new_index, Node* new_nodes, Voxel* new_voxels) {
+#if 0 /* Recursive */
 	const Node& old_node = nodes[old_index];
 	Node& new_node = new_nodes[new_index];
 	const uint32_t child_count = popcnt_var64(old_node.child_mask, 64u);
@@ -389,6 +390,46 @@ void Svt64::defrag_recurse(uint32_t old_index, uint32_t new_index, Node* new_nod
 	for (uint32_t i = 0u; i < child_count; ++i) {
 		defrag_recurse(child_ptr + i, new_node.abs_ptr() + i, new_nodes, new_voxels);
 	}
+#else /* Non-recursive */
+	uint32_t old_stack[128] {};
+	uint32_t new_stack[128] {};
+	uint32_t stack_ptr = 0u;
+	uint32_t old_node_index = 0u;
+	uint32_t new_node_index = 0u;
+
+	for (;;) {
+		const Node& old_node = nodes[old_node_index];
+		Node& new_node = new_nodes[new_node_index];
+		const uint32_t child_count = popcnt_var64(old_node.child_mask, 64u);
+		const uint32_t child_ptr = old_node.abs_ptr();
+
+		/* Defrag leaf node */
+		if (old_node.is_leaf()) {
+			new_node = Node(true, voxel_count, old_node.child_mask);
+			memcpy(new_voxels + voxel_count, voxels + child_ptr, child_count * sizeof(Voxel));
+			voxel_count += child_count;
+			if (stack_ptr == 0u) break;
+			old_node_index = old_stack[--stack_ptr];
+			new_node_index = new_stack[stack_ptr];
+			continue;
+		}
+
+		/* Defrag node */
+		new_node = Node(false, node_count, old_node.child_mask);
+		memcpy(new_nodes + node_count, nodes + child_ptr, child_count * sizeof(Node));
+		node_count += child_count;
+
+		/* Recurse into child nodes */
+		for (uint32_t i = 0u; i < child_count; ++i) {
+			old_stack[stack_ptr] = child_ptr + i;
+			new_stack[stack_ptr++] = new_node.abs_ptr() + i;
+		}
+
+		if (stack_ptr == 0u) break;
+		old_node_index = old_stack[--stack_ptr];
+		new_node_index = new_stack[stack_ptr];
+	}
+#endif
 }
 
 Svt64::~Svt64() {
