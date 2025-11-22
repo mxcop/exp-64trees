@@ -32,8 +32,9 @@ void CwBvh::build(const Aabb* input_prims, const uint32_t input_count) {
 	
 	/* Calculate the number of nodes we need and allocate space for them */
 	const uint32_t nodes_needed = input_count * 2u;
-	Bvh2Node* bvh2_nodes = new Bvh2Node[nodes_needed] {};
-	uint32_t node_ptr = 2u; /* Skip the 2nd node for better cache-line alignment */
+	bvh2_nodes = new Bvh2Node[nodes_needed] {};
+	uint32_t node_ptr = 0u; 
+	uint32_t node_count = 2u; /* Skip the 2nd node for better cache-line alignment */
 	indices = new uint32_t[input_count] {};
 	for (uint32_t i = 0u; i < input_count; ++i) indices[i] = i;
 	prims = new Aabb[input_count] {};
@@ -64,7 +65,7 @@ void CwBvh::build(const Aabb* input_prims, const uint32_t input_count) {
 			Bvh2Node& node = bvh2_nodes[node_ptr];
 
 			/* Initialize the bins */
-			float3 bin_min[3][BVH_BINS]{}, bin_max[3][BVH_BINS]{};
+			float3 bin_min[3][BVH_BINS] {}, bin_max[3][BVH_BINS] {};
 			for (uint32_t a = 0; a < 3u; ++a) {
 				for (uint32_t i = 0; i < BVH_BINS; ++i) {
 					bin_min[a][i] = float3(BVH_FAR);
@@ -143,8 +144,8 @@ void CwBvh::build(const Aabb* input_prims, const uint32_t input_count) {
 			/* Create the two child nodes */
 			const uint32_t left_cnt = src - node.left_first, right_cnt = node.prim_count - left_cnt;
 			if (left_cnt == 0u || right_cnt == 0u) break;
-			const uint32_t n = node_ptr;
-			node_ptr += 2u;
+			const uint32_t n = node_count;
+			node_count += 2u;
 			bvh2_nodes[n].min_bounds = best_lmin, bvh2_nodes[n].max_bounds = best_lmax;
 			bvh2_nodes[n].left_first = node.left_first, bvh2_nodes[n].prim_count = left_cnt;
 			bvh2_nodes[n + 1].min_bounds = best_rmin, bvh2_nodes[n + 1].max_bounds = best_rmax;
@@ -167,17 +168,54 @@ void CwBvh::build(const Aabb* input_prims, const uint32_t input_count) {
 
 }
 
-inline float2 intersect_aabb(const float3 origin, const float3 invDir, const float3 bbMin, const float3 bbMax) {
-	float3 t0 = (bbMin - origin) * invDir;
-	float3 t1 = (bbMax - origin) * invDir;
+float intersect_aabb(const Ray ray, const float3 box_min, const float3 box_max) {
+	const float3 t_to_min = (box_min - ray.O) * ray.rD;
+	const float3 t_to_max = (box_max - ray.O) * ray.rD;
+	const float3 t_min = fminf(t_to_min, t_to_max);
+	const float3 t_max = fmaxf(t_to_min, t_to_max);
+	const float t_near = fmaxf(fmaxf(fmaxf(t_min.x, t_min.y), t_min.z), 0);
+	const float t_far = fminf(fminf(fminf(t_max.x, t_max.y), t_max.z), ray.t);
 
-	const float3 temp = t0;
-	t0 = fminf(temp, t1), t1 = fmaxf(temp, t1);
+	return t_near > t_far ? BVH_FAR : t_near;
+}
 
-	const float tmin = fmaxf(fmaxf(fmaxf(t0.x, t0.y), t0.z), 0.0f);
-	const float tmax = fminf(fminf(t1.x, t1.y), t1.z);
+LeafHit CwBvh::trace(const Ray& ray) const {
+	Bvh2Node* node = &bvh2_nodes[0], *stack[32] {};
+	uint32_t stack_ptr = 0u;
+	float closest_dist = BVH_FAR;
+	uint16_t steps = 0u;
 
-	return float2(tmin, tmax);
+	for (;;) {
+		if (node->is_leaf()) {
+			for (uint32_t i = 0u; i < node->prim_count; ++i) {
+				const Aabb& prim = prims[indices[node->left_first + i]];
+				const float dist = intersect_aabb(ray, prim.min, prim.max);
+				steps += 1;
+				if (dist < closest_dist) {
+					closest_dist = dist;
+				}
+			}
+			if (stack_ptr == 0) break; else node = stack[--stack_ptr];
+			continue;
+		}
+		Bvh2Node* child1 = &bvh2_nodes[node->left_first], *child2 = &bvh2_nodes[node->left_first + 1];
+		float dist1 = intersect_aabb(ray, child1->min_bounds, child1->max_bounds);
+		float dist2 = intersect_aabb(ray, child2->min_bounds, child2->max_bounds);
+		steps += 2;
+
+		if (dist1 > dist2) { swap(dist1, dist2); swap(child1, child2); }
+		if (dist1 == BVH_FAR) {
+			if (stack_ptr == 0) break; else node = stack[--stack_ptr];
+		} else {
+			node = child1; /* continue with the nearest */
+			if (dist2 != BVH_FAR) stack[stack_ptr++] = child2; /* push far child */
+		}
+	}
+
+	LeafHit hit {};
+	hit.t = closest_dist;
+	hit.steps = steps;
+	return hit;
 }
 
 CwBvh::~CwBvh() {

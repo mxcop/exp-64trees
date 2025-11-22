@@ -2,6 +2,7 @@
 
 #include "svt64.h"
 #include "svb8.h"
+#include "cwbvh.h"
 
 constexpr uint32_t GRID_SIZE = 64u;
 constexpr uint32_t CELL_COUNT = GRID_SIZE * GRID_SIZE * GRID_SIZE;
@@ -30,6 +31,18 @@ void Renderer::Init() {
 	tree->build(voxel_data);
 	const uint64_t svt64_memory = tree->memory_usage();
 	printf("[64tree] memory usage: %.2fMB (%.2f%%)\n", (float)svt64_memory / 1000000, (float)svt64_memory / (float)raw_memory * 100.0f);
+
+	cwbvh = new CwBvh();
+	Aabb* prims = new Aabb[64]{};
+	for (int i = 0; i < 64; ++i) {
+		float rx = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * 16.0f - 8.0f;
+		float ry = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * 16.0f - 8.0f;
+		float rz = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * 16.0f - 8.0f;
+		prims[i].min = float3(rx - 0.1f, ry - 0.1f, rz - 0.1f);
+		prims[i].max = float3(rx + 0.1f, ry + 0.1f, rz + 0.1f);
+	}
+	cwbvh->build(prims, 64);
+	delete[] prims;
 }
 
 inline float3 heat_color(float t) {
@@ -45,37 +58,44 @@ inline float3 heat_color(float t) {
 }
 
 /* Trace a ray. */
-float3 Renderer::Trace(Ray& ray)
-{
-	const VoxelHit hit = tree->trace(ray);
+float3 Renderer::Trace(Ray& ray) {
+	const LeafHit hit = cwbvh->trace(ray);
 
-	switch (display_mode) {
-	case DisplayMode::eAlbedo: {
-		if (hit.t < 1e30f) {
+	return heat_color((float)hit.steps / 64.0f);
 
-			float irradiance = 1.0f;
-			//float irradiance = 0.0f;
-			//const float3 hit_point = ray.O + ray.D * (hit.t - 0.001f);
-
-			//for (int i = 0; i < 8; ++i) {
-			//	const float3 bounce_dir = normalize(hit.normal + random_unit_vector(seed));
-			//	const VoxelHit bounce_hit = tree->trace(Ray(hit_point, bounce_dir));
-			//	irradiance += bounce_hit.t < 1e30f ? 0.0f : 1.0f;
-			//}
-			//irradiance *= (1.0f / 8.0f);
-
-			const Voxel v = hit.material;
-			return float3((float)v.albedo_r / 255.0f, (float)v.albedo_g / 255.0f, (float)v.albedo_b / 255.0f) * irradiance;
-		}
-		break;
+	if (hit.t < 1e30f) {
+		return float3(1.0f, 1.0f, 1.0f);
 	}
-	case DisplayMode::eDepth:
-		return float3(1.0f - hit.t * 0.2f);
-	case DisplayMode::eNormal:
-		return hit.normal * 0.5f + 0.5f;
-	case DisplayMode::eSteps:
-		return heat_color((float)hit.steps / 32.0f);
-	}
+
+	//const VoxelHit hit = tree->trace(ray);
+
+	//switch (display_mode) {
+	//case DisplayMode::eAlbedo: {
+	//	if (hit.t < 1e30f) {
+
+	//		float irradiance = 1.0f;
+	//		//float irradiance = 0.0f;
+	//		//const float3 hit_point = ray.O + ray.D * (hit.t - 0.001f);
+
+	//		//for (int i = 0; i < 8; ++i) {
+	//		//	const float3 bounce_dir = normalize(hit.normal + random_unit_vector(seed));
+	//		//	const VoxelHit bounce_hit = tree->trace(Ray(hit_point, bounce_dir));
+	//		//	irradiance += bounce_hit.t < 1e30f ? 0.0f : 1.0f;
+	//		//}
+	//		//irradiance *= (1.0f / 8.0f);
+
+	//		const Voxel v = hit.material;
+	//		return float3((float)v.albedo_r / 255.0f, (float)v.albedo_g / 255.0f, (float)v.albedo_b / 255.0f) * irradiance;
+	//	}
+	//	break;
+	//}
+	//case DisplayMode::eDepth:
+	//	return float3(1.0f - hit.t * 0.2f);
+	//case DisplayMode::eNormal:
+	//	return hit.normal * 0.5f + 0.5f;
+	//case DisplayMode::eSteps:
+	//	return heat_color((float)hit.steps / 32.0f);
+	//}
 
 	return float3(0.05f, 0.05f, 0.05f);
 }

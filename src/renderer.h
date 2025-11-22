@@ -2,6 +2,7 @@
 
 class Svb8;
 class Svt64;
+class CwBvh;
 
 #include "voxel-data.h"
 
@@ -37,6 +38,7 @@ public:
 	RawVoxels voxel_data{};
 	Svb8* brickmap = nullptr;
 	Svt64* tree = nullptr;
+	CwBvh* cwbvh = nullptr;
 	Camera camera;
 	DisplayMode display_mode = DisplayMode::eAlbedo;
 	bool animating = true;

@@ -4,6 +4,7 @@
 
 struct LeafHit {
 	float t = 1e30f;
+	uint16_t steps = 0u;
 
 	LeafHit() = default;
 	LeafHit(float t) : t(t) {};
@@ -14,6 +15,8 @@ struct Aabb {
 	float3 min = 1e30f;
 	float3 max = -1e30f;
 };
+
+struct Bvh2Node;
 
 /* 8-wide Compressed Bounding Volume Hierarchy. */
 class CwBvh {
@@ -55,6 +58,8 @@ class CwBvh {
 	uint32_t* indices = nullptr;
 	Aabb* prims = nullptr;
 	uint32_t prim_count = 0u;
+
+	Bvh2Node* bvh2_nodes = nullptr;
 
 	/* Recursive tree subdivide function. */
 	Node subdivide(const RawVoxels& raw_data, int scale, int3 index);
