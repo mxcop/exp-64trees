@@ -2,6 +2,7 @@
 #include "svt64.h"
 
 #include "immintrin.h"
+#include "cwbvh.h"
 
 /* Log with base. */
 inline uint32_t log_base(const uint32_t x, const uint32_t b)

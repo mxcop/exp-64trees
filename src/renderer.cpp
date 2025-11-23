@@ -33,15 +33,22 @@ void Renderer::Init() {
 	printf("[64tree] memory usage: %.2fMB (%.2f%%)\n", (float)svt64_memory / 1000000, (float)svt64_memory / (float)raw_memory * 100.0f);
 
 	cwbvh = new CwBvh();
-	Aabb* prims = new Aabb[64]{};
-	for (int i = 0; i < 64; ++i) {
-		float rx = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * 16.0f - 8.0f;
-		float ry = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * 16.0f - 8.0f;
-		float rz = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * 16.0f - 8.0f;
+	constexpr int PRIM_COUNT = 128;
+	constexpr float PRIM_RANGE = 16.0f;
+	Aabb* prims = new Aabb[PRIM_COUNT]{};
+	for (int i = 0; i < PRIM_COUNT; ++i) {
+		float rx = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * PRIM_RANGE - (PRIM_RANGE / 2.0f);
+		float ry = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * PRIM_RANGE - (PRIM_RANGE / 2.0f);
+		float rz = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * PRIM_RANGE - (PRIM_RANGE / 2.0f);
 		prims[i].min = float3(rx - 0.1f, ry - 0.1f, rz - 0.1f);
 		prims[i].max = float3(rx + 0.1f, ry + 0.1f, rz + 0.1f);
 	}
-	cwbvh->build(prims, 64);
+	{ /* Build and time tree */
+		Timer t; 
+		cwbvh->build(prims, PRIM_COUNT);
+		printf("cwbvh build time: %.2fms\n", t.elapsed() * 1000);
+		cwbvh->print();
+	}
 	delete[] prims;
 }
 
@@ -59,13 +66,12 @@ inline float3 heat_color(float t) {
 
 /* Trace a ray. */
 float3 Renderer::Trace(Ray& ray) {
-	const LeafHit hit = cwbvh->trace(ray);
+	const LeafHit hit = use_cwbvh ? cwbvh->trace_cwbvh(ray) : cwbvh->trace_bvh2(ray);
 
-	return heat_color((float)hit.steps / 64.0f);
-
-	if (hit.t < 1e30f) {
-		return float3(1.0f, 1.0f, 1.0f);
+	if (hit.t >= 1e30f) {
+		return heat_color((float)hit.steps / 32.0f);
 	}
+	return float3(1.0f, 1.0f, 1.0f);
 
 	//const VoxelHit hit = tree->trace(ray);
 
@@ -209,6 +215,8 @@ void Renderer::UI() {
 			tree->defrag();
 			printf("defrag time: %5.2fus\n", t.elapsed() * 1000000);
 		}
+
+		ImGui::Checkbox("CWBVH", &use_cwbvh);
 	}
 	ImGui::End();
 }

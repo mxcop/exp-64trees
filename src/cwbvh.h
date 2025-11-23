@@ -17,52 +17,30 @@ struct Aabb {
 };
 
 struct Bvh2Node;
+struct Bvh8Node;
+struct CwBvhNode;
 
 /* 8-wide Compressed Bounding Volume Hierarchy. */
 class CwBvh {
-	struct Node {
-		/* Minimum bounds of this node. */
-		float min_bounds_x = 0.0f;
-		float min_bounds_y = 0.0f;
-		float min_bounds_z = 0.0f;
-
-		/* Logarithm of the extent of this node. */
-		uint8_t log_extent_x = 0u;
-		uint8_t log_extent_y = 0u;
-		uint8_t log_extent_z = 0u;
-		uint8_t intersection_mask = 0u;
-
-		/* Index of the first child node. (children are stored contiguously) */
-		uint32_t child_base_index = 0u;
-		/* Index of the first primitive. (primitives are stored contiguously) */
-		uint32_t prim_base_index = 0u;
-
-		/* Quantized child node bounding boxes. (48 bytes) */
-		struct QuantizedBounds {
-			uint8_t meta = 0u;
-			uint8_t lo_x = 0u;
-			uint8_t lo_y = 0u;
-			uint8_t lo_z = 0u;
-			uint8_t hi_x = 0u;
-			uint8_t hi_y = 0u;
-			uint8_t hi_z = 0u;
-		} qbounds[8] {};
-
-		Node() = default;
-	};
-
-	/* List of tree nodes. */
-	Node* nodes = nullptr;
-	uint32_t node_count = 0u;
-	/* List of primitive data. */
-	uint32_t* indices = nullptr;
+	/* Primitive data */
 	Aabb* prims = nullptr;
 	uint32_t prim_count = 0u;
 
+	/* 2-wide BVH */
 	Bvh2Node* bvh2_nodes = nullptr;
+	uint32_t* bvh2_indices = nullptr;
+	uint32_t bvh2_node_count = 0u;
 
-	/* Recursive tree subdivide function. */
-	Node subdivide(const RawVoxels& raw_data, int scale, int3 index);
+	Bvh8Node* bvh8_nodes = nullptr;
+
+	/* CWBVH */
+	CwBvhNode* cwbvh_nodes = nullptr;
+	uint32_t* cwbvh_indices = nullptr;
+	uint32_t cwbvh_node_count = 0u;
+
+	void build_bvh2(const Aabb* input_prims, const uint32_t input_count);
+
+	void bvh2_to_cwbvh();
 
 public:
 	CwBvh() = default;
@@ -71,7 +49,11 @@ public:
 	/* Build the BVH. */
 	void build(const Aabb* input_prims, const uint32_t input_count);
 
-	LeafHit trace(const Ray& ray) const;
+	void print() const;
+
+	LeafHit trace_bvh2(const Ray& ray) const;
+
+	LeafHit trace_cwbvh(const Ray& ray) const;
 
 	void set_voxel(uint32_t x, uint32_t y, uint32_t z);
 };

@@ -44,6 +44,7 @@ public:
 	bool animating = true;
 	bool lmb = false;
 	float anim_time = 0;
+	bool use_cwbvh = false;
 };
 
 } // namespace Tmpl8
