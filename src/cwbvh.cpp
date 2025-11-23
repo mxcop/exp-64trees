@@ -69,16 +69,15 @@ struct CwBvhNode {
 	/* Index of the first primitive. (primitives are stored contiguously) */
 	uint32_t prim_base_index = 0u;
 
-	/* Quantized child node bounding boxes. (48 bytes) */
-	struct QuantizedBounds {
-		uint8_t meta = 0u;
-		uint8_t lo_x = 0u;
-		uint8_t lo_y = 0u;
-		uint8_t lo_z = 0u;
-		uint8_t hi_x = 0u;
-		uint8_t hi_y = 0u;
-		uint8_t hi_z = 0u;
-	} qbounds[8]{};
+	/* Child node metadata. */
+	uint8_t meta[8] {};
+	/* Quantized child node bounding boxes. (40 bytes) */
+	uint8_t lo_x[8] {};
+	uint8_t lo_y[8] {};
+	uint8_t lo_z[8] {};
+	uint8_t hi_x[8] {};
+	uint8_t hi_y[8] {};
+	uint8_t hi_z[8] {};
 };
 
 inline float half_area(const float3& v) { return v.x < -BVH_FAR ? 0 : (v.x * v.y + v.y * v.z + v.z * v.x); }
@@ -160,24 +159,24 @@ void CwBvh::print() const {
 		printf("node %d:\n", node_index);
 
 		for (uint32_t i = 0; i < 8; i++) {
-			if (node.qbounds[i].meta == 0u) continue; /* Empty node */
+			if (node.meta[i] == 0u) continue; /* Empty node */
 
 			const bool is_leaf = (node.intersection_mask & (1u << i)) == 0;
 
 			if (is_leaf) {
 				// Leaf node - test primitives (following tinybvh)
-				const uint32_t primBits = node.qbounds[i].meta >> 5;
+				const uint32_t primBits = node.meta[i] >> 5;
 				const uint32_t primCount = primBits == 0b001 ? 1 :
 					primBits == 0b011 ? 2 : 3;
-				const uint32_t leafIdx = node.qbounds[i].meta & 0x1f;
+				const uint32_t leafIdx = node.meta[i] & 0x1f;
 				const uint32_t primBase = node.prim_base_index;
 
 				// Calculate actual primitive offset
 				uint32_t primOffset = 0;
 				for (uint32_t j = 0; j < i; j++) {
 					if ((node.intersection_mask & (1u << j)) == 0 &&
-						node.qbounds[j].meta != 0) {
-						const uint32_t pb = node.qbounds[j].meta >> 5;
+						node.meta[j] != 0) {
+						const uint32_t pb = node.meta[j] >> 5;
 						primOffset += pb == 0b001 ? 1 : pb == 0b011 ? 2 : 3;
 					}
 				}
@@ -186,7 +185,7 @@ void CwBvh::print() const {
 				//const uint32_t prim_count = prim_bits == 0b001 ? 1 : prim_bits == 0b011 ? 2 : 3;
 				printf("[%d] leaf %d..%d\n", i, primBase + primOffset, primBase + primOffset + primCount);
 			} else {
-				const uint32_t child_index = node.child_base_index + ((node.qbounds[i].meta & 0b11111u) - 24u);
+				const uint32_t child_index = node.child_base_index + ((node.meta[i] & 0b11111u) - 24u);
 				printf("[%d] node %d\n", i, child_index);
 				stack[stack_ptr++] = child_index;
 			}
@@ -474,20 +473,20 @@ void CwBvh::bvh2_to_cwbvh() {
 		for (uint32_t i = 0u; i < 8u; ++i) {
 			/* Clear empty slots */
 			if (children[i] == 0u) {
-				dst.qbounds[i].meta = 0u;
-				dst.qbounds[i].lo_x = dst.qbounds[i].lo_y = dst.qbounds[i].lo_z = 0u;
-				dst.qbounds[i].hi_x = dst.qbounds[i].hi_y = dst.qbounds[i].hi_z = 0u;
+				dst.meta[i] = 0u;
+				dst.lo_x[i] = dst.lo_y[i] = dst.lo_z[i] = 0u;
+				dst.hi_x[i] = dst.hi_y[i] = dst.hi_z[i] = 0u;
 				continue;
 			}
 
 			/* Calculate quantized bounding box */
 			Bvh8Node& child = bvh8_nodes[children[i]];
-			dst.qbounds[i].lo_x = (uint8_t)floorf((child.min_bounds.x - src.min_bounds.x) * rq_x);
-			dst.qbounds[i].lo_y = (uint8_t)floorf((child.min_bounds.y - src.min_bounds.y) * rq_y);
-			dst.qbounds[i].lo_z = (uint8_t)floorf((child.min_bounds.z - src.min_bounds.z) * rq_z);
-			dst.qbounds[i].hi_x = (uint8_t)ceilf((child.max_bounds.x - src.min_bounds.x) * rq_x);
-			dst.qbounds[i].hi_y = (uint8_t)ceilf((child.max_bounds.y - src.min_bounds.y) * rq_y);
-			dst.qbounds[i].hi_z = (uint8_t)ceilf((child.max_bounds.z - src.min_bounds.z) * rq_z);
+			dst.lo_x[i] = (uint8_t)floorf((child.min_bounds.x - src.min_bounds.x) * rq_x);
+			dst.lo_y[i] = (uint8_t)floorf((child.min_bounds.y - src.min_bounds.y) * rq_y);
+			dst.lo_z[i] = (uint8_t)floorf((child.min_bounds.z - src.min_bounds.z) * rq_z);
+			dst.hi_x[i] = (uint8_t)ceilf((child.max_bounds.x - src.min_bounds.x) * rq_x);
+			dst.hi_y[i] = (uint8_t)ceilf((child.max_bounds.y - src.min_bounds.y) * rq_y);
+			dst.hi_z[i] = (uint8_t)ceilf((child.max_bounds.z - src.min_bounds.z) * rq_z);
 
 			if (child.is_leaf()) {
 				/* Unary encode primitive count */
@@ -495,7 +494,7 @@ void CwBvh::bvh2_to_cwbvh() {
 				const uint32_t unaryEncodedTriCount = child.prim_count == 1u ? 0b001u : child.prim_count == 2u ? 0b011u : 0b111u;
 
 				/* Set the child metadata */
-				dst.qbounds[i].meta = (uint8_t)((unaryEncodedTriCount << 5u) | leafChildTriCount);
+				dst.meta[i] = (uint8_t)((unaryEncodedTriCount << 5u) | leafChildTriCount);
 
 				/* Copy over primitive indices */
 				leafChildTriCount += child.prim_count;
@@ -508,7 +507,7 @@ void CwBvh::bvh2_to_cwbvh() {
 				imask |= (1u << i);
 
 				/* Set the child metadata */
-				dst.qbounds[i].meta = (1u << 5u) | (24u + (uint8_t)internalChildCount);
+				dst.meta[i] = (1u << 5u) | (24u + (uint8_t)internalChildCount);
 
 				/* Push the child onto the stack */
 				stackNodePtr[stackPtr] = &child;
@@ -647,36 +646,36 @@ LeafHit CwBvh::trace_cwbvh(const Ray& ray) const {
 
 			// Test all 8 children
 			for (uint32_t i = 0; i < 8; i++) {
-				if (node.qbounds[i].meta == 0) continue; // Empty slot
+				if (node.meta[i] == 0) continue; // Empty slot
 
 				// Get quantized bounds based on ray direction
 				float tminx, tminy, tminz, tmaxx, tmaxy, tmaxz;
 
 				if (ray.D.x >= 0) {
-					tminx = (float)node.qbounds[i].lo_x * adjusted_idirx + origx;
-					tmaxx = (float)node.qbounds[i].hi_x * adjusted_idirx + origx;
+					tminx = (float)node.lo_x[i] * adjusted_idirx + origx;
+					tmaxx = (float)node.hi_x[i] * adjusted_idirx + origx;
 				}
 				else {
-					tminx = (float)node.qbounds[i].hi_x * adjusted_idirx + origx;
-					tmaxx = (float)node.qbounds[i].lo_x * adjusted_idirx + origx;
+					tminx = (float)node.hi_x[i] * adjusted_idirx + origx;
+					tmaxx = (float)node.lo_x[i] * adjusted_idirx + origx;
 				}
 
 				if (ray.D.y >= 0) {
-					tminy = (float)node.qbounds[i].lo_y * adjusted_idiry + origy;
-					tmaxy = (float)node.qbounds[i].hi_y * adjusted_idiry + origy;
+					tminy = (float)node.lo_y[i] * adjusted_idiry + origy;
+					tmaxy = (float)node.hi_y[i] * adjusted_idiry + origy;
 				}
 				else {
-					tminy = (float)node.qbounds[i].hi_y * adjusted_idiry + origy;
-					tmaxy = (float)node.qbounds[i].lo_y * adjusted_idiry + origy;
+					tminy = (float)node.hi_y[i] * adjusted_idiry + origy;
+					tmaxy = (float)node.lo_y[i] * adjusted_idiry + origy;
 				}
 
 				if (ray.D.z >= 0) {
-					tminz = (float)node.qbounds[i].lo_z * adjusted_idirz + origz;
-					tmaxz = (float)node.qbounds[i].hi_z * adjusted_idirz + origz;
+					tminz = (float)node.lo_z[i] * adjusted_idirz + origz;
+					tmaxz = (float)node.hi_z[i] * adjusted_idirz + origz;
 				}
 				else {
-					tminz = (float)node.qbounds[i].hi_z * adjusted_idirz + origz;
-					tmaxz = (float)node.qbounds[i].lo_z * adjusted_idirz + origz;
+					tminz = (float)node.hi_z[i] * adjusted_idirz + origz;
+					tmaxz = (float)node.lo_z[i] * adjusted_idirz + origz;
 				}
 
 				// Ray-box intersection test
@@ -684,7 +683,7 @@ LeafHit CwBvh::trace_cwbvh(const Ray& ray) const {
 				const float cmax = fminf(fminf(fminf(tmaxx, tmaxy), tmaxz), tmax);
 
 				if (cmin <= cmax) {
-					const uint32_t meta = node.qbounds[i].meta;
+					const uint32_t meta = node.meta[i];
 					const bool is_internal = (meta & 0x20) != 0; // Bit 5 indicates internal node
 
 					if (is_internal) {

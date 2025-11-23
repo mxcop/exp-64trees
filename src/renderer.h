@@ -44,6 +44,7 @@ public:
 	bool animating = true;
 	bool lmb = false;
 	float anim_time = 0;
+	float frame_time = 0.0f;
 	bool use_cwbvh = false;
 };
 

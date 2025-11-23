@@ -172,7 +172,8 @@ void Renderer::Tick(float deltaTime)
 	static float avg = 10, alpha = 1;
 	avg = (1 - alpha) * avg + alpha * t.elapsed() * 1000;
 	if (alpha > 0.05f) alpha *= 0.5f;
-	float fps = 1000.0f / avg, rps = (SCRWIDTH * SCRHEIGHT) / avg;
+	frame_time = avg;
+	float rps = (SCRWIDTH * SCRHEIGHT) / avg;
 	// printf("%5.2fms (%.1ffps) - %.1fMrays/s\n", avg, fps, rps / 1000);
 
 	/* User input */
@@ -199,6 +200,8 @@ void Renderer::UI() {
 	}
 
 	if (ImGui::Begin("Debug")) {
+		ImGui::Text("Frame Time: %.2fms (%.2f FPS)", frame_time, 1000.0f / frame_time);
+
 		const char* modes[] = { "Albedo", "Depth", "Normal", "Steps"};
 		ImGui::Combo("Display Mode", (int*)&display_mode, modes, IM_ARRAYSIZE(modes));
 
