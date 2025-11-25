@@ -29,6 +29,8 @@ typedef unsigned int uint;
 typedef unsigned short ushort;
 typedef unsigned short half;
 
+constexpr float BIG_F32 = 1e30f;
+
 // "leak" common namespaces to all compilation units. This is not standard // C++ practice
 // but a deliberate simplification for template projects. Feel free to remove this if it
 // offends you.
@@ -338,5 +340,11 @@ bool IsKeyDown( const uint key );
 #include "scene.h"
 #include "camera.h"
 #include "renderer.h"
+
+/* Axis Aligned Bounding Box. */
+struct Aabb {
+    float3 min = 1e30f;
+    float3 max = -1e30f;
+};
 
 // EOF

@@ -132,6 +132,7 @@
     <ClCompile Include="lib\imgui\imgui_impl_opengl3.cpp" />
     <ClCompile Include="lib\imgui\imgui_tables.cpp" />
     <ClCompile Include="lib\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="src\bvh2.cpp" />
     <ClCompile Include="src\cwbvh.cpp" />
     <ClCompile Include="src\svb8.cpp" />
     <ClCompile Include="src\voxel-data.cpp" />
@@ -156,6 +157,7 @@
     <ClInclude Include="lib\imgui\imstb_textedit.h" />
     <ClInclude Include="lib\imgui\imstb_truetype.h" />
     <ClInclude Include="lib\ogt_vox.h" />
+    <ClInclude Include="src\bvh2.h" />
     <ClInclude Include="src\cwbvh.h" />
     <ClInclude Include="src\svb8.h" />
     <ClInclude Include="src\voxel-data.h" />

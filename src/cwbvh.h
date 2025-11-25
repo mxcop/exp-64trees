@@ -10,12 +10,6 @@ struct LeafHit {
 	LeafHit(float t) : t(t) {};
 };
 
-/* Axis Aligned Bounding Box. */
-struct Aabb {
-	float3 min = 1e30f;
-	float3 max = -1e30f;
-};
-
 struct Bvh2Node;
 struct Bvh8Node;
 struct CwBvhNode;

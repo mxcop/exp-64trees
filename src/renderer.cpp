@@ -3,6 +3,7 @@
 #include "svt64.h"
 #include "svb8.h"
 #include "cwbvh.h"
+#include "bvh2.h"
 
 constexpr uint32_t GRID_SIZE = 64u;
 constexpr uint32_t CELL_COUNT = GRID_SIZE * GRID_SIZE * GRID_SIZE;
@@ -33,7 +34,7 @@ void Renderer::Init() {
 	printf("[64tree] memory usage: %.2fMB (%.2f%%)\n", (float)svt64_memory / 1000000, (float)svt64_memory / (float)raw_memory * 100.0f);
 
 	cwbvh = new CwBvh();
-	constexpr int PRIM_COUNT = 128;
+	constexpr int PRIM_COUNT = 1024;
 	constexpr float PRIM_RANGE = 16.0f;
 	Aabb* prims = new Aabb[PRIM_COUNT]{};
 	for (int i = 0; i < PRIM_COUNT; ++i) {
@@ -47,8 +48,16 @@ void Renderer::Init() {
 		Timer t; 
 		cwbvh->build(prims, PRIM_COUNT);
 		printf("cwbvh build time: %.2fms\n", t.elapsed() * 1000);
-		cwbvh->print();
+		// cwbvh->print();
 	}
+
+	bvh2 = new Bvh2();
+    { /* Build and time tree */
+        Timer t;
+        bvh2->build(prims, PRIM_COUNT);
+        printf("bvh2 build time: %.2fms\n", t.elapsed() * 1000);
+    }
+
 	delete[] prims;
 }
 
@@ -68,8 +77,11 @@ inline float3 heat_color(float t) {
 float3 Renderer::Trace(Ray& ray) {
 	const LeafHit hit = use_cwbvh ? cwbvh->trace_cwbvh(ray) : cwbvh->trace_bvh2(ray);
 
+	//const Hit hit = bvh2->trace(ray);
+    //return float3(hit.distance * 0.1f);
+
 	if (hit.t >= 1e30f) {
-		return heat_color((float)hit.steps / 32.0f);
+		return heat_color((float)hit.steps / 16.0f);
 	}
 	return float3(1.0f, 1.0f, 1.0f);
 

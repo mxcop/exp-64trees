@@ -59,9 +59,9 @@ struct CwBvhNode {
 	float min_bounds_z = 0.0f;
 
 	/* Logarithm of the extent of this node. */
-	uint8_t log_extent_x = 0u;
-	uint8_t log_extent_y = 0u;
-	uint8_t log_extent_z = 0u;
+	int8_t log_extent_x = 0;
+	int8_t log_extent_y = 0;
+	int8_t log_extent_z = 0;
 	uint8_t intersection_mask = 0u;
 
 	/* Index of the first child node. (children are stored contiguously) */
@@ -389,13 +389,12 @@ void CwBvh::bvh2_to_cwbvh() {
 
 	/* Compress the BVH8 into the CWBVH format */
 	/* <https://research.nvidia.com/sites/default/files/publications/ylitie2017hpg-paper.pdf> */
-	Bvh8Node* stackNodePtr[256]{};
-	uint32_t stackNodeAddr[256]{}, stackPtr = 1, nodeDataPtr = 1, triDataPtr = 0;
-	stackNodePtr[0] = &bvh8_nodes[0], stackNodeAddr[0] = 0;
-	for (;stackPtr > 0u;) {
-		const Bvh8Node& src = *stackNodePtr[--stackPtr];
-		const uint32_t currentNodeAddr = stackNodeAddr[stackPtr];
-		CwBvhNode& dst = cwbvh_nodes[currentNodeAddr];
+    uint32_t src_stack[256] {}, dst_stack[256] {};
+    uint32_t stack_ptr = 1u, node_ptr = 1u, prim_ptr = 0u;
+    for (; stack_ptr > 0u;) {
+        /* Get the source and destination nodes */
+        const Bvh8Node& src = bvh8_nodes[src_stack[--stack_ptr]];
+        CwBvhNode& dst = cwbvh_nodes[dst_stack[stack_ptr]];
 		const float3 node_center = (src.min_bounds + src.max_bounds) * 0.5f;
 
 		/* Octant-based child ordering for traversal coherence */
@@ -443,12 +442,10 @@ void CwBvh::bvh2_to_cwbvh() {
 		/* Fill in remaining slots */
 		for (uint32_t i = 0u; i < 8u; ++i) {
 			if (assignment[i] != 256u) continue;
-
 			for (uint32_t s = 0u; s < 8u; ++s) {
-				if (slot_empty[s]) {
-					slot_empty[s] = false, assignment[i] = s;
-					break;
-				}
+                if (slot_empty[s] == false) continue;
+				slot_empty[s] = false, assignment[i] = s;
+				break;
 			}
 		}
 
@@ -457,19 +454,21 @@ void CwBvh::bvh2_to_cwbvh() {
 		for (uint32_t i = 0u; i < 8u; ++i) children[assignment[i]] = src.children[i];
 
 		/* Child bounds quantization parameters */
-		dst.log_extent_x = (uint8_t)ceilf(log2f(src.max_bounds.x - src.min_bounds.x) / 255.0f);
-		dst.log_extent_y = (uint8_t)ceilf(log2f(src.max_bounds.y - src.min_bounds.y) / 255.0f);
-		dst.log_extent_z = (uint8_t)ceilf(log2f(src.max_bounds.z - src.min_bounds.z) / 255.0f);
-		const float rq_x = 1.0f / powf(2.0f, (float)dst.log_extent_x);
-		const float rq_y = 1.0f / powf(2.0f, (float)dst.log_extent_y);
-		const float rq_z = 1.0f / powf(2.0f, (float)dst.log_extent_z);
+        dst.log_extent_x = (int8_t)ceilf(log2f((src.max_bounds.x - src.min_bounds.x) * (1.0f / 255.0f)));
+        dst.log_extent_y = (int8_t)ceilf(log2f((src.max_bounds.y - src.min_bounds.y) * (1.0f / 255.0f)));
+        dst.log_extent_z = (int8_t)ceilf(log2f((src.max_bounds.z - src.min_bounds.z) * (1.0f / 255.0f)));
+		const float rq_x = 1.0f / exp2f((float)dst.log_extent_x);
+		const float rq_y = 1.0f / exp2f((float)dst.log_extent_y);
+		const float rq_z = 1.0f / exp2f((float)dst.log_extent_z);
 		dst.min_bounds_x = src.min_bounds.x;
 		dst.min_bounds_y = src.min_bounds.y;
 		dst.min_bounds_z = src.min_bounds.z;
 
 		/* Quantize the child nodes */
-		int32_t internalChildCount = 0, leafChildTriCount = 0, childBaseIndex = 0, triangleBaseIndex = 0;
-		uint8_t imask = 0;
+        uint32_t leaf_prim_count = 0u;
+        dst.child_base_index = 0xFFFFFFFFu;
+        dst.prim_base_index = 0xFFFFFFFFu;
+        dst.intersection_mask = 0u;
 		for (uint32_t i = 0u; i < 8u; ++i) {
 			/* Clear empty slots */
 			if (children[i] == 0u) {
@@ -490,37 +489,30 @@ void CwBvh::bvh2_to_cwbvh() {
 
 			if (child.is_leaf()) {
 				/* Unary encode primitive count */
-				if (leafChildTriCount == 0u) triangleBaseIndex = triDataPtr;
+                if (dst.prim_base_index == 0xFFFFFFFFu) dst.prim_base_index = prim_ptr;
 				const uint32_t unaryEncodedTriCount = child.prim_count == 1u ? 0b001u : child.prim_count == 2u ? 0b011u : 0b111u;
 
 				/* Set the child metadata */
-				dst.meta[i] = (uint8_t)((unaryEncodedTriCount << 5u) | leafChildTriCount);
+                dst.meta[i] = (uint8_t)((unaryEncodedTriCount << 5u) | leaf_prim_count);
 
 				/* Copy over primitive indices */
-				leafChildTriCount += child.prim_count;
+                leaf_prim_count += child.prim_count;
 				for (uint32_t j = 0u; j < child.prim_count; ++j) {
-					cwbvh_indices[triDataPtr++] = bvh2_indices[child.first_prim + j];
+					cwbvh_indices[prim_ptr++] = bvh2_indices[child.first_prim + j];
 				}
 			} else {
-				const uint32_t childNodeAddr = nodeDataPtr++;
-				if (internalChildCount == 0u) childBaseIndex = childNodeAddr;
-				imask |= (1u << i);
+                const uint32_t new_index = node_ptr++;
+                if (dst.child_base_index == 0xFFFFFFFFu) dst.child_base_index = new_index;
+                dst.intersection_mask |= (1u << i);
 
 				/* Set the child metadata */
-				dst.meta[i] = (1u << 5u) | (24u + (uint8_t)internalChildCount);
+				dst.meta[i] = (1u << 5u) | (24u + (uint8_t)i);
 
 				/* Push the child onto the stack */
-				stackNodePtr[stackPtr] = &child;
-				stackNodeAddr[stackPtr++] = childNodeAddr;
-				internalChildCount++;
+                src_stack[stack_ptr] = children[i];
+                dst_stack[stack_ptr++] = new_index;
 			}
 		}
-
-		dst.intersection_mask = imask;
-		dst.child_base_index = childBaseIndex;
-		dst.prim_base_index = triangleBaseIndex;
-		internalChildCount = 0u;
-		leafChildTriCount = 0u;
 	}
 
 	//delete[] bvh8_nodes;
@@ -584,171 +576,126 @@ inline uint32_t __bfind(uint32_t x) {
 inline uint32_t __popc(uint32_t x) {
 	return __popcnt(x);
 }
+static uint32_t as_uint(const float v) { return *(uint32_t*)&v; }
+inline uint32_t extract_byte(const uint32_t i, const uint32_t n) { return (i >> (n * 8)) & 0xFF; }
+inline uint32_t sign_extend_s8x4(const uint32_t i)
+{
+	// asm("prmt.b32 %0, %1, 0x0, 0x0000BA98;" : "=r"(v) : "r"(i)); // BA98: 1011`1010`1001`1000
+	// with the given parameters, prmt will extend the sign to all bits in a byte.
+	uint32_t b0 = (i & 0b10000000000000000000000000000000) ? 0xff000000 : 0;
+	uint32_t b1 = (i & 0b00000000100000000000000000000000) ? 0x00ff0000 : 0;
+	uint32_t b2 = (i & 0b00000000000000001000000000000000) ? 0x0000ff00 : 0;
+	uint32_t b3 = (i & 0b00000000000000000000000010000000) ? 0x000000ff : 0;
+	return b0 + b1 + b2 + b3; // probably can do better than this.
+}
 LeafHit CwBvh::trace_cwbvh(const Ray& ray) const {
+	LeafHit hit(BIG_F32);
 	uint2 traversalStack[128];
-	uint32_t stackPtr = 0;
-	float tmin = 0.0f, tmax = 1e30f;
-
-	LeafHit hit{};
-	hit.t = tmax;
-	hit.steps = 0;
-
-	// Calculate octant for traversal order
-	const uint32_t octinv = (7 - ((ray.D.x < 0 ? 4 : 0) | (ray.D.y < 0 ? 2 : 0) | (ray.D.z < 0 ? 1 : 0))) * 0x01010101;
-
-	// Initialize with root node
-	uint2 ngroup = uint2(0, 0b10000000000000000000000000000000);
-	uint2 tgroup = uint2(0, 0);
-
-	do {
-		// Process internal nodes
-		if (ngroup.y > 0x00FFFFFF) {
-			const uint32_t hits = ngroup.y;
-			const uint32_t imask = ngroup.y;
-			const uint32_t child_bit_index = __bfind(hits);
-			const uint32_t child_node_base_index = ngroup.x;
-
-			// Remove this child from the bitmask
+	uint32_t hitAddr = 0, stackPtr = 0;
+	const float4* blasNodes = (float4*)cwbvh_nodes;
+	float tmin = 0, tmax = 1e30f;
+	const uint32_t octinv = (7 - ((ray.D.x < 0 ? 4 : 0) | (ray.D.y < 0 ? 2 : 0) | (ray.D.z < 0 ? 1 : 0))) * 0x1010101;
+	uint2 ngroup = uint2(0, 0b10000000000000000000000000000000), tgroup = uint2(0);
+	do
+	{
+		hit.steps += 1;
+		if (ngroup.y > 0x00FFFFFF)
+		{
+			const uint32_t hits = ngroup.y, imask = ngroup.y;
+			const uint32_t child_bit_index = __bfind(hits), child_node_base_index = ngroup.x;
 			ngroup.y &= ~(1 << child_bit_index);
-
-			// Push remaining children to stack if any
-			if (ngroup.y > 0x00FFFFFF) {
-				STACK_PUSH();
-			}
-
-			// Calculate actual child node index
-			const uint32_t slot_index = (child_bit_index - 24) ^ (octinv & 0xFF);
-			const uint32_t relative_index = __popc(imask & ~(0xFFFFFFFF << slot_index));
-			const uint32_t child_node_index = child_node_base_index + relative_index;
-
-			// Load child node
-			const CwBvhNode& node = cwbvh_nodes[child_node_index];
-
-			// Setup for testing this node's children
-			ngroup.x = node.child_base_index;
-			tgroup.x = node.prim_base_index;
-			tgroup.y = 0;
-
-			// Dequantization setup
-			const float scale_x = powf(2.0f, (float)node.log_extent_x);
-			const float scale_y = powf(2.0f, (float)node.log_extent_y);
-			const float scale_z = powf(2.0f, (float)node.log_extent_z);
-
-			const float adjusted_idirx = scale_x * ray.rD.x;
-			const float adjusted_idiry = scale_y * ray.rD.y;
-			const float adjusted_idirz = scale_z * ray.rD.z;
-
-			const float origx = (node.min_bounds_x - ray.O.x) * ray.rD.x;
-			const float origy = (node.min_bounds_y - ray.O.y) * ray.rD.y;
-			const float origz = (node.min_bounds_z - ray.O.z) * ray.rD.z;
-
-			uint32_t hitmask = 0;
-
-			// Test all 8 children
-			for (uint32_t i = 0; i < 8; i++) {
-				if (node.meta[i] == 0) continue; // Empty slot
-
-				// Get quantized bounds based on ray direction
-				float tminx, tminy, tminz, tmaxx, tmaxy, tmaxz;
-
-				if (ray.D.x >= 0) {
-					tminx = (float)node.lo_x[i] * adjusted_idirx + origx;
-					tmaxx = (float)node.hi_x[i] * adjusted_idirx + origx;
-				}
-				else {
-					tminx = (float)node.hi_x[i] * adjusted_idirx + origx;
-					tmaxx = (float)node.lo_x[i] * adjusted_idirx + origx;
-				}
-
-				if (ray.D.y >= 0) {
-					tminy = (float)node.lo_y[i] * adjusted_idiry + origy;
-					tmaxy = (float)node.hi_y[i] * adjusted_idiry + origy;
-				}
-				else {
-					tminy = (float)node.hi_y[i] * adjusted_idiry + origy;
-					tmaxy = (float)node.lo_y[i] * adjusted_idiry + origy;
-				}
-
-				if (ray.D.z >= 0) {
-					tminz = (float)node.lo_z[i] * adjusted_idirz + origz;
-					tmaxz = (float)node.hi_z[i] * adjusted_idirz + origz;
-				}
-				else {
-					tminz = (float)node.hi_z[i] * adjusted_idirz + origz;
-					tmaxz = (float)node.lo_z[i] * adjusted_idirz + origz;
-				}
-
-				// Ray-box intersection test
-				const float cmin = fmaxf(fmaxf(fmaxf(tminx, tminy), tminz), tmin);
-				const float cmax = fminf(fminf(fminf(tmaxx, tmaxy), tmaxz), tmax);
-
-				if (cmin <= cmax) {
-					const uint32_t meta = node.meta[i];
-					const bool is_internal = (meta & 0x20) != 0; // Bit 5 indicates internal node
-
-					if (is_internal) {
-						// Internal node - add to node group for traversal
-						const uint32_t child_slot = (meta & 0x1F) - 24;
-						const uint32_t octant_slot = child_slot ^ (octinv & 0xFF);
-						hitmask |= (1 << (24 + octant_slot));
-					} else {
-						// Leaf node - add to triangle group for testing
-						const uint32_t prim_bits = (meta >> 5) & 0x07;
-						const uint32_t leaf_idx = meta & 0x1F;
-						hitmask |= (prim_bits << leaf_idx);
+			if (ngroup.y > 0x00FFFFFF) { STACK_PUSH( /* nodeGroup */); }
+			{
+				const uint32_t slot_index = (child_bit_index - 24) ^ (octinv & 255);
+				const uint32_t relative_index = __popc(imask & ~(0xFFFFFFFF << slot_index));
+				const uint32_t child_node_index = child_node_base_index + relative_index;
+				const float4 n0 = blasNodes[child_node_index * 5 + 0], n1 = blasNodes[child_node_index * 5 + 1];
+				const float4 n2 = blasNodes[child_node_index * 5 + 2], n3 = blasNodes[child_node_index * 5 + 3];
+				const float4 n4 = blasNodes[child_node_index * 5 + 4], p = n0;
+				int3 e;
+				e.x = (int32_t) * ((int8_t*)&n0.w + 0), e.y = (int32_t) * ((int8_t*)&n0.w + 1), e.z = (int32_t) * ((int8_t*)&n0.w + 2);
+				ngroup.x = as_uint(n1.x), tgroup.x = as_uint(n1.y), tgroup.y = 0;
+				uint32_t hitmask = 0;
+				const uint32_t vx = (e.x + 127) << 23u; const float adjusted_idirx = *(float*)&vx * ray.rD.x;
+				const uint32_t vy = (e.y + 127) << 23u; const float adjusted_idiry = *(float*)&vy * ray.rD.y;
+				const uint32_t vz = (e.z + 127) << 23u; const float adjusted_idirz = *(float*)&vz * ray.rD.z;
+				const float origx = -(ray.O.x - p.x) * ray.rD.x;
+				const float origy = -(ray.O.y - p.y) * ray.rD.y;
+				const float origz = -(ray.O.z - p.z) * ray.rD.z;
+				{	// First 4
+					const uint32_t meta4 = *(uint32_t*)&n1.z, is_inner4 = (meta4 & (meta4 << 1)) & 0x10101010;
+					const uint32_t inner_mask4 = sign_extend_s8x4(is_inner4 << 3);
+					const uint32_t bit_index4 = (meta4 ^ (octinv & inner_mask4)) & 0x1F1F1F1F;
+					const uint32_t child_bits4 = (meta4 >> 5) & 0x07070707;
+					uint32_t swizzledLox = (ray.rD.x < 0) ? *(uint32_t*)&n3.z : *(uint32_t*)&n2.x, swizzledHix = (ray.rD.x < 0) ? *(uint32_t*)&n2.x : *(uint32_t*)&n3.z;
+					uint32_t swizzledLoy = (ray.rD.y < 0) ? *(uint32_t*)&n4.x : *(uint32_t*)&n2.z, swizzledHiy = (ray.rD.y < 0) ? *(uint32_t*)&n2.z : *(uint32_t*)&n4.x;
+					uint32_t swizzledLoz = (ray.rD.z < 0) ? *(uint32_t*)&n4.z : *(uint32_t*)&n3.x, swizzledHiz = (ray.rD.z < 0) ? *(uint32_t*)&n3.x : *(uint32_t*)&n4.z;
+					float tminx[4], tminy[4], tminz[4], tmaxx[4], tmaxy[4], tmaxz[4];
+					tminx[0] = ((swizzledLox >> 0) & 0xFF) * adjusted_idirx + origx, tminx[1] = ((swizzledLox >> 8) & 0xFF) * adjusted_idirx + origx, tminx[2] = ((swizzledLox >> 16) & 0xFF) * adjusted_idirx + origx;
+					tminx[3] = ((swizzledLox >> 24) & 0xFF) * adjusted_idirx + origx, tminy[0] = ((swizzledLoy >> 0) & 0xFF) * adjusted_idiry + origy, tminy[1] = ((swizzledLoy >> 8) & 0xFF) * adjusted_idiry + origy;
+					tminy[2] = ((swizzledLoy >> 16) & 0xFF) * adjusted_idiry + origy, tminy[3] = ((swizzledLoy >> 24) & 0xFF) * adjusted_idiry + origy, tminz[0] = ((swizzledLoz >> 0) & 0xFF) * adjusted_idirz + origz;
+					tminz[1] = ((swizzledLoz >> 8) & 0xFF) * adjusted_idirz + origz, tminz[2] = ((swizzledLoz >> 16) & 0xFF) * adjusted_idirz + origz, tminz[3] = ((swizzledLoz >> 24) & 0xFF) * adjusted_idirz + origz;
+					tmaxx[0] = ((swizzledHix >> 0) & 0xFF) * adjusted_idirx + origx, tmaxx[1] = ((swizzledHix >> 8) & 0xFF) * adjusted_idirx + origx, tmaxx[2] = ((swizzledHix >> 16) & 0xFF) * adjusted_idirx + origx;
+					tmaxx[3] = ((swizzledHix >> 24) & 0xFF) * adjusted_idirx + origx, tmaxy[0] = ((swizzledHiy >> 0) & 0xFF) * adjusted_idiry + origy, tmaxy[1] = ((swizzledHiy >> 8) & 0xFF) * adjusted_idiry + origy;
+					tmaxy[2] = ((swizzledHiy >> 16) & 0xFF) * adjusted_idiry + origy, tmaxy[3] = ((swizzledHiy >> 24) & 0xFF) * adjusted_idiry + origy, tmaxz[0] = ((swizzledHiz >> 0) & 0xFF) * adjusted_idirz + origz;
+					tmaxz[1] = ((swizzledHiz >> 8) & 0xFF) * adjusted_idirz + origz, tmaxz[2] = ((swizzledHiz >> 16) & 0xFF) * adjusted_idirz + origz, tmaxz[3] = ((swizzledHiz >> 24) & 0xFF) * adjusted_idirz + origz;
+					for (int32_t i = 0; i < 4; i++)
+					{
+						// Use VMIN, VMAX to compute the slabs
+						const float cmin = fmaxf(fmaxf(fmaxf(tminx[i], tminy[i]), tminz[i]), tmin);
+						const float cmax = fminf(fminf(fminf(tmaxx[i], tmaxy[i]), tmaxz[i]), tmax);
+						if (cmin <= cmax) hitmask |= extract_byte(child_bits4, i) << extract_byte(bit_index4, i);
 					}
 				}
-			}
-
-			// Separate internal and leaf hits
-			ngroup.y = (hitmask & 0xFF000000) | node.intersection_mask;
-			tgroup.y = hitmask & 0x00FFFFFF;
-		}
-		else {
-			// No internal nodes to process, move to leaf processing
-			tgroup = ngroup;
-			ngroup = uint2(0, 0);
-		}
-
-		// Process leaf nodes (primitives)
-		while (tgroup.y != 0) {
-			uint32_t prim_index = __bfind(tgroup.y);
-			tgroup.y &= ~(1 << prim_index);
-
-			// Calculate actual primitive offset
-			uint32_t prim_offset = 0;
-			for (uint32_t i = 0; i < prim_index; i++) {
-				if (tgroup.y & (1 << i)) {
-					// Count primitives in previous leaves
-					// This depends on the encoding in meta field
-					prim_offset++;
+				{	// Second 4
+					const uint32_t meta4 = *(uint32_t*)&n1.w, is_inner4 = (meta4 & (meta4 << 1)) & 0x10101010;
+					const uint32_t inner_mask4 = sign_extend_s8x4(is_inner4 << 3);
+					const uint32_t bit_index4 = (meta4 ^ (octinv & inner_mask4)) & 0x1F1F1F1F;
+					const uint32_t child_bits4 = (meta4 >> 5) & 0x07070707;
+					uint32_t swizzledLox = (ray.rD.x < 0) ? *(uint32_t*)&n3.w : *(uint32_t*)&n2.y, swizzledHix = (ray.rD.x < 0) ? *(uint32_t*)&n2.y : *(uint32_t*)&n3.w;
+					uint32_t swizzledLoy = (ray.rD.y < 0) ? *(uint32_t*)&n4.y : *(uint32_t*)&n2.w, swizzledHiy = (ray.rD.y < 0) ? *(uint32_t*)&n2.w : *(uint32_t*)&n4.y;
+					uint32_t swizzledLoz = (ray.rD.z < 0) ? *(uint32_t*)&n4.w : *(uint32_t*)&n3.y, swizzledHiz = (ray.rD.z < 0) ? *(uint32_t*)&n3.y : *(uint32_t*)&n4.w;
+					float tminx[4], tminy[4], tminz[4], tmaxx[4], tmaxy[4], tmaxz[4];
+					tminx[0] = ((swizzledLox >> 0) & 0xFF) * adjusted_idirx + origx, tminx[1] = ((swizzledLox >> 8) & 0xFF) * adjusted_idirx + origx, tminx[2] = ((swizzledLox >> 16) & 0xFF) * adjusted_idirx + origx;
+					tminx[3] = ((swizzledLox >> 24) & 0xFF) * adjusted_idirx + origx, tminy[0] = ((swizzledLoy >> 0) & 0xFF) * adjusted_idiry + origy, tminy[1] = ((swizzledLoy >> 8) & 0xFF) * adjusted_idiry + origy;
+					tminy[2] = ((swizzledLoy >> 16) & 0xFF) * adjusted_idiry + origy, tminy[3] = ((swizzledLoy >> 24) & 0xFF) * adjusted_idiry + origy, tminz[0] = ((swizzledLoz >> 0) & 0xFF) * adjusted_idirz + origz;
+					tminz[1] = ((swizzledLoz >> 8) & 0xFF) * adjusted_idirz + origz, tminz[2] = ((swizzledLoz >> 16) & 0xFF) * adjusted_idirz + origz, tminz[3] = ((swizzledLoz >> 24) & 0xFF) * adjusted_idirz + origz;
+					tmaxx[0] = ((swizzledHix >> 0) & 0xFF) * adjusted_idirx + origx, tmaxx[1] = ((swizzledHix >> 8) & 0xFF) * adjusted_idirx + origx, tmaxx[2] = ((swizzledHix >> 16) & 0xFF) * adjusted_idirx + origx;
+					tmaxx[3] = ((swizzledHix >> 24) & 0xFF) * adjusted_idirx + origx, tmaxy[0] = ((swizzledHiy >> 0) & 0xFF) * adjusted_idiry + origy, tmaxy[1] = ((swizzledHiy >> 8) & 0xFF) * adjusted_idiry + origy;
+					tmaxy[2] = ((swizzledHiy >> 16) & 0xFF) * adjusted_idiry + origy, tmaxy[3] = ((swizzledHiy >> 24) & 0xFF) * adjusted_idiry + origy, tmaxz[0] = ((swizzledHiz >> 0) & 0xFF) * adjusted_idirz + origz;
+					tmaxz[1] = ((swizzledHiz >> 8) & 0xFF) * adjusted_idirz + origz, tmaxz[2] = ((swizzledHiz >> 16) & 0xFF) * adjusted_idirz + origz, tmaxz[3] = ((swizzledHiz >> 24) & 0xFF) * adjusted_idirz + origz;
+					for (int32_t i = 0; i < 4; i++)
+					{
+						const float cmin = fmaxf(fmaxf(fmaxf(tminx[i], tminy[i]), tminz[i]), tmin);
+						const float cmax = fminf(fminf(fminf(tmaxx[i], tmaxy[i]), tmaxz[i]), tmax);
+						if (cmin <= cmax) hitmask |= extract_byte(child_bits4, i) << extract_byte(bit_index4, i);
+					}
 				}
+				ngroup.y = (hitmask & 0xFF000000) | (as_uint(n0.w) >> 24), tgroup.y = hitmask & 0x00FFFFFF;
 			}
+		}
+		else tgroup = ngroup, ngroup = uint2(0);
+		while (tgroup.y != 0)
+		{
+			uint32_t primIndex = __bfind(tgroup.y);
+			tgroup.y -= (1u << primIndex);
+			int32_t primAddr = tgroup.x + primIndex;
+			const Aabb& prim = prims[cwbvh_indices[primAddr]];
 
-			// Get primitive index
-			uint32_t prim_id = cwbvh_indices[tgroup.x + prim_offset];
-			const Aabb& prim = prims[prim_id];
-
-			// Intersect primitive (you need to implement this based on your primitive type)
 			const float t = intersect_aabb(ray, prim.min, prim.max);
-			if (t < tmax) {
-				tmax = t;
-				hit.t = t;
-			}
-		}
 
-		// Continue traversal
-		if (ngroup.y <= 0x00FFFFFF) {
-			if (stackPtr > 0) {
-				STACK_POP();
-			} else {
-				break; // Done
-			}
+            if (t == BIG_F32) continue; /* miss */
+            if (t < 0.0f || t > tmax) continue;
+            tmax = t;
 		}
-
-		hit.steps++;
+		if (ngroup.y > 0x00FFFFFF) continue;
+		if (stackPtr > 0) { STACK_POP( /* nodeGroup */); }
+		else
+		{
+			hit.t = tmax;
+			break;
+		}
 	} while (true);
-
 	return hit;
 }
 
