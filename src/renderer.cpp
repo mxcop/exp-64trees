@@ -33,32 +33,32 @@ void Renderer::Init() {
 	const uint64_t svt64_memory = tree->memory_usage();
 	printf("[64tree] memory usage: %.2fMB (%.2f%%)\n", (float)svt64_memory / 1000000, (float)svt64_memory / (float)raw_memory * 100.0f);
 
-	cwbvh = new CwBvh();
-	constexpr int PRIM_COUNT = 1024;
-	constexpr float PRIM_RANGE = 16.0f;
-	Aabb* prims = new Aabb[PRIM_COUNT]{};
-	for (int i = 0; i < PRIM_COUNT; ++i) {
-		float rx = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * PRIM_RANGE - (PRIM_RANGE / 2.0f);
-		float ry = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * PRIM_RANGE - (PRIM_RANGE / 2.0f);
-		float rz = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * PRIM_RANGE - (PRIM_RANGE / 2.0f);
-		prims[i].min = float3(rx - 0.1f, ry - 0.1f, rz - 0.1f);
-		prims[i].max = float3(rx + 0.1f, ry + 0.1f, rz + 0.1f);
-	}
-	{ /* Build and time tree */
-		Timer t; 
-		cwbvh->build(prims, PRIM_COUNT);
-		printf("cwbvh build time: %.2fms\n", t.elapsed() * 1000);
-		// cwbvh->print();
-	}
+	//cwbvh = new CwBvh();
+	//constexpr int PRIM_COUNT = 1024;
+	//constexpr float PRIM_RANGE = 16.0f;
+	//Aabb* prims = new Aabb[PRIM_COUNT]{};
+	//for (int i = 0; i < PRIM_COUNT; ++i) {
+	//	float rx = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * PRIM_RANGE - (PRIM_RANGE / 2.0f);
+	//	float ry = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * PRIM_RANGE - (PRIM_RANGE / 2.0f);
+	//	float rz = static_cast <float>(rand()) / static_cast <float>(RAND_MAX) * PRIM_RANGE - (PRIM_RANGE / 2.0f);
+	//	prims[i].min = float3(rx - 0.1f, ry - 0.1f, rz - 0.1f);
+	//	prims[i].max = float3(rx + 0.1f, ry + 0.1f, rz + 0.1f);
+	//}
+	//{ /* Build and time tree */
+	//	Timer t; 
+	//	cwbvh->build(prims, PRIM_COUNT);
+	//	printf("cwbvh build time: %.2fms\n", t.elapsed() * 1000);
+	//	// cwbvh->print();
+	//}
 
-	bvh2 = new Bvh2();
-    { /* Build and time tree */
-        Timer t;
-        bvh2->build(prims, PRIM_COUNT);
-        printf("bvh2 build time: %.2fms\n", t.elapsed() * 1000);
-    }
+	//bvh2 = new Bvh2();
+ //   { /* Build and time tree */
+ //       Timer t;
+ //       bvh2->build(prims, PRIM_COUNT);
+ //       printf("bvh2 build time: %.2fms\n", t.elapsed() * 1000);
+ //   }
 
-	delete[] prims;
+	//delete[] prims;
 }
 
 inline float3 heat_color(float t) {
@@ -75,45 +75,45 @@ inline float3 heat_color(float t) {
 
 /* Trace a ray. */
 float3 Renderer::Trace(Ray& ray) {
-	const LeafHit hit = use_cwbvh ? cwbvh->trace_cwbvh(ray) : cwbvh->trace_bvh2(ray);
+	//const LeafHit hit = use_cwbvh ? cwbvh->trace_cwbvh(ray) : cwbvh->trace_bvh2(ray);
 
 	//const Hit hit = bvh2->trace(ray);
     //return float3(hit.distance * 0.1f);
 
-	if (hit.t >= 1e30f) {
-		return heat_color((float)hit.steps / 16.0f);
+	//if (hit.t >= 1e30f) {
+	//	return heat_color((float)hit.steps / 128.0f);
+	//}
+	//return float3(1.0f, 1.0f, 1.0f);
+
+	const VoxelHit hit = tree->trace(ray);
+
+	switch (display_mode) {
+	case DisplayMode::eAlbedo: {
+		if (hit.t < 1e30f) {
+
+			float irradiance = 1.0f;
+			//float irradiance = 0.0f;
+			//const float3 hit_point = ray.O + ray.D * (hit.t - 0.001f);
+
+			//for (int i = 0; i < 8; ++i) {
+			//	const float3 bounce_dir = normalize(hit.normal + random_unit_vector(seed));
+			//	const VoxelHit bounce_hit = tree->trace(Ray(hit_point, bounce_dir));
+			//	irradiance += bounce_hit.t < 1e30f ? 0.0f : 1.0f;
+			//}
+			//irradiance *= (1.0f / 8.0f);
+
+			const Voxel v = hit.material;
+			return float3((float)v.albedo_r / 255.0f, (float)v.albedo_g / 255.0f, (float)v.albedo_b / 255.0f) * irradiance;
+		}
+		break;
 	}
-	return float3(1.0f, 1.0f, 1.0f);
-
-	//const VoxelHit hit = tree->trace(ray);
-
-	//switch (display_mode) {
-	//case DisplayMode::eAlbedo: {
-	//	if (hit.t < 1e30f) {
-
-	//		float irradiance = 1.0f;
-	//		//float irradiance = 0.0f;
-	//		//const float3 hit_point = ray.O + ray.D * (hit.t - 0.001f);
-
-	//		//for (int i = 0; i < 8; ++i) {
-	//		//	const float3 bounce_dir = normalize(hit.normal + random_unit_vector(seed));
-	//		//	const VoxelHit bounce_hit = tree->trace(Ray(hit_point, bounce_dir));
-	//		//	irradiance += bounce_hit.t < 1e30f ? 0.0f : 1.0f;
-	//		//}
-	//		//irradiance *= (1.0f / 8.0f);
-
-	//		const Voxel v = hit.material;
-	//		return float3((float)v.albedo_r / 255.0f, (float)v.albedo_g / 255.0f, (float)v.albedo_b / 255.0f) * irradiance;
-	//	}
-	//	break;
-	//}
-	//case DisplayMode::eDepth:
-	//	return float3(1.0f - hit.t * 0.2f);
-	//case DisplayMode::eNormal:
-	//	return hit.normal * 0.5f + 0.5f;
-	//case DisplayMode::eSteps:
-	//	return heat_color((float)hit.steps / 32.0f);
-	//}
+	case DisplayMode::eDepth:
+		return float3(1.0f - hit.t * 0.2f);
+	case DisplayMode::eNormal:
+		return hit.normal * 0.5f + 0.5f;
+	case DisplayMode::eSteps:
+		return heat_color((float)hit.steps / 32.0f);
+	}
 
 	return float3(0.05f, 0.05f, 0.05f);
 }
@@ -202,11 +202,11 @@ void Renderer::UI() {
 			const float3 hit_pos = ray.O + ray.D * (hit.t - 0.001f);
 			const uint3 hit_index = uint3((hit_pos - 1.0f) * float3(voxel_data.w, voxel_data.h, voxel_data.d));
 			// printf("hit pos: %u, %u, %u\n", hit_index.x, hit_index.y, hit_index.z);
-			//Timer t; /* frame timer. */
+			Timer t; /* frame timer. */
 			tree->set_voxel(hit_index.x, hit_index.y, hit_index.z);
-			//static float avg = 10, alpha = 1;
-			//avg = (1 - alpha) * avg + alpha * t.elapsed() * 1000000;
-			//if (alpha > 0.05f) alpha *= 0.5f;
+			static float avg = 10, alpha = 1;
+			avg = (1 - alpha) * avg + alpha * t.elapsed() * 1000000;
+			if (alpha > 0.05f) alpha *= 0.5f;
 			//printf("set voxel time: %5.2fus\n", avg);
 		}
 	}

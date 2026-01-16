@@ -16,6 +16,7 @@ struct VoxelHit {
 
 /* 64-wide Sparse Voxel Tree. */
 class Svt64 {
+#pragma pack(push, 4)
 	struct Node {
 		/* The most significant bit indicates if this node is a leaf containing voxels. */
 		/* The 31 least significant bits are an absolute offset into an array of child nodes / voxels. */
@@ -33,7 +34,10 @@ class Svt64 {
 		inline uint32_t abs_ptr() const {
 			return child_ptr & 0x7FFFFFFFu;
 		};
-	};
+    };
+#pragma pack(pop)
+
+	static_assert(sizeof(Node) == 12);
 
 	/* List of tree nodes. */
 	Node* nodes = nullptr;
