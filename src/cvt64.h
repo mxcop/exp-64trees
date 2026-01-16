@@ -3,9 +3,10 @@
 #include <cstdint>
 
 #include "voxel-data.h"
+#include "vbc64.h"
 
-/* 64-wide Sparse Voxel Tree. */
-class Svt64 {
+/* Compressed 64-wide Sparse Voxel Tree. */
+class Cvt64 {
 #pragma pack(push, 4)
 	struct Node {
 		/* The most significant bit indicates if this node is a leaf containing voxels. */
@@ -27,12 +28,21 @@ class Svt64 {
 	};
 #pragma pack(pop)
 
+	struct Block {
+		Vbc64 albedo_r{};
+		Vbc64 albedo_g{};
+		Vbc64 albedo_b{};
+		uint32_t dword_offset = 0u;
+	};
+
 	/* List of tree nodes. */
 	Node* nodes = nullptr;
 	uint32_t node_count = 0u;
 	/* List of voxel data. */
-	SmallVoxel* voxels = nullptr;
-	uint32_t voxel_count = 0u;
+	Block* blocks = nullptr;
+	uint32_t block_count = 0u;
+	uint32_t* voxels = nullptr;
+	uint32_t dword_count = 0u;
 	uint32_t req_depth = 0u;
 	/* Number of wasted bytes. */
 	uint32_t wasted_count = 0u;
@@ -41,16 +51,11 @@ class Svt64 {
 	Node subdivide(const RawVoxels& raw_data, int scale, int3 index);
 
 public:
-	Svt64() = default;
-	~Svt64();
+	Cvt64() = default;
+	~Cvt64();
 
 	/* Build the Sparse Voxel Tree. */
 	void build(const RawVoxels& raw_data);
-
-	/* Defragment the Tree. */
-	void defrag();
-
-	void defrag_recurse(uint32_t old_index, uint32_t new_index, Node* new_nodes, SmallVoxel* new_voxels);
 
 	/* Get the current memory usage of the 64tree. */
 	uint64_t memory_usage() const;
@@ -59,5 +64,5 @@ public:
 
 	VoxelHit trace(const Ray& ray) const;
 
-	void set_voxel(uint32_t x, uint32_t y, uint32_t z);
+	void set_voxel(uint32_t x, uint32_t y, uint32_t z) {};
 };

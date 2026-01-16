@@ -1,5 +1,6 @@
 #include "precomp.h"
 
+#include "cvt64.h"
 #include "svt64.h"
 #include "svb8.h"
 
@@ -8,7 +9,7 @@ constexpr uint32_t CELL_COUNT = GRID_SIZE * GRID_SIZE * GRID_SIZE;
 
 /* Called once on init. */
 void Renderer::Init() {
-	voxel_data = RawVoxels::from_file("assets/dragon.vox");
+	voxel_data = RawVoxels::from_file("assets/sponza256.vox");
 
 	brickmap = new Svb8();
 	brickmap->init(voxel_data.w / 8u, voxel_data.h / 8u, voxel_data.d / 8u);
@@ -29,7 +30,12 @@ void Renderer::Init() {
 	tree = new Svt64();
 	tree->build(voxel_data);
 	const uint64_t svt64_memory = tree->memory_usage();
-	printf("[64tree] memory usage: %.2fMB (%.2f%%)\n", (float)svt64_memory / 1000000, (float)svt64_memory / (float)raw_memory * 100.0f);
+	printf("[svt64] memory usage: %.2fMB (%.2f%%)\n", (float)svt64_memory / 1000000, (float)svt64_memory / (float)raw_memory * 100.0f);
+
+	ctree = new Cvt64();
+	ctree->build(voxel_data);
+	const uint64_t cvt64_memory = ctree->memory_usage();
+	printf("[cvt64] memory usage: %.2fMB (%.2f%%)\n", (float)cvt64_memory / 1000000, (float)cvt64_memory / (float)raw_memory * 100.0f);
 }
 
 inline float3 heat_color(float t) {
@@ -47,7 +53,7 @@ inline float3 heat_color(float t) {
 /* Trace a ray. */
 float3 Renderer::Trace(Ray& ray)
 {
-	const VoxelHit hit = tree->trace(ray);
+	const VoxelHit hit = compressed ? ctree->trace(ray) : tree->trace(ray);
 
 	switch (display_mode) {
 	case DisplayMode::eAlbedo: {
@@ -155,7 +161,7 @@ void Renderer::Tick(float deltaTime)
 
 /* ImGUI tick. */
 void Renderer::UI() {
-	if (lmb) {
+	if (lmb && ImGui::GetIO().WantCaptureMouse == false) {
 		const Ray ray = camera.GetPrimaryRay((float)mousePos.x, (float)mousePos.y);
 		const VoxelHit hit = tree->trace(ray);
 
@@ -176,6 +182,8 @@ void Renderer::UI() {
 		const char* modes[] = { "Albedo", "Depth", "Normal", "Steps"};
 		ImGui::Combo("Display Mode", (int*)&display_mode, modes, IM_ARRAYSIZE(modes));
 
+		ImGui::Checkbox("Compressed Tree", &compressed);
+
 		ImGui::Separator();
 		const uint64_t raw_memory = (uint64_t)voxel_data.w * voxel_data.h * voxel_data.d * sizeof(Voxel);
 		const uint64_t svt64_memory = tree->memory_usage();
@@ -188,6 +196,10 @@ void Renderer::UI() {
 			Timer t;
 			tree->defrag();
 			printf("defrag time: %5.2fus\n", t.elapsed() * 1000000);
+		}
+
+		if (ImGui::Button("Log Camera")) {
+			printf("position: %f, %f, %f - target: %f, %f, %f\n", camera.camPos.x, camera.camPos.y, camera.camPos.z, camera.camTarget.x, camera.camTarget.y, camera.camTarget.z);
 		}
 	}
 	ImGui::End();

@@ -13,6 +13,12 @@ struct Voxel {
 	inline bool is_empty() const { return albedo_a == 0u; };
 };
 
+struct SmallVoxel {
+	uint8_t albedo_r;
+	uint8_t albedo_g;
+	uint8_t albedo_b;
+};
+
 constexpr Voxel VOXEL_EMPTY = Voxel();
 
 /* Make sure 1 voxel is always 4 bytes. */
@@ -34,3 +40,14 @@ struct RawVoxels {
 private:
 	RawVoxels(Voxel* raw_data, const uint32_t w, const uint32_t h, const uint32_t d) : raw_data(raw_data), w(w), h(h), d(d) {};
 };
+
+struct VoxelHit {
+	float t = 1e30f;
+	float3 normal = 0.0f;
+	Voxel material{};
+	uint16_t steps = 0u;
+
+	VoxelHit() = default;
+	VoxelHit(float t, float3 normal, Voxel mat, uint16_t steps) : t(t), normal(normal), material(mat), steps(steps) {};
+};
+

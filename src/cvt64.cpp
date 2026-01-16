@@ -1,5 +1,5 @@
 #include "precomp.h"
-#include "svt64.h"
+#include "cvt64.h"
 
 #include "immintrin.h"
 
@@ -9,7 +9,7 @@ inline uint32_t log_base(const uint32_t x, const uint32_t b)
 	return log2(x) / log2(b);
 }
 
-Svt64::Node::Node(const bool is_leaf, const uint32_t ptr, const uint64_t mask)
+Cvt64::Node::Node(const bool is_leaf, const uint32_t ptr, const uint64_t mask)
 {
 	/* Only set the 31 least significant bits. */
 	child_ptr = ptr & 0x7FFFFFFFu;
@@ -20,18 +20,21 @@ Svt64::Node::Node(const bool is_leaf, const uint32_t ptr, const uint64_t mask)
 }
 
 /* Recursive tree subdivide function. */
-Svt64::Node Svt64::subdivide(const RawVoxels& raw_data, int scale, int3 index)
+Cvt64::Node Cvt64::subdivide(const RawVoxels& raw_data, int scale, int3 index)
 {
 	/* Create a leaf node */
 	if (scale == 2) {
-		Node leaf_node = Node(true, voxel_count, 0x00);
+		Node leaf_node = Node(true, block_count, 0x00);
 
 		/* Check if the node is outside the voxel grid bounds */
 		if (index.x + 3u >= raw_data.w || index.y + 3u >= raw_data.h || index.z + 3u >= raw_data.d) return leaf_node;
 		if (index.x < 0 || index.y < 0 || index.z < 0) return leaf_node;
 
 		const int wh = raw_data.h * raw_data.w;
-
+		uint8_t data_r[64]{};
+		uint8_t data_g[64]{};
+		uint8_t data_b[64]{};
+		uint32_t num_voxels = 0u;
 		for (int i = 0; i < 64; ++i) {
 			/* Fetch the voxel data */
 			const int voxel_x = index.x + ((i >> 0) & 3);
@@ -39,15 +42,26 @@ Svt64::Node Svt64::subdivide(const RawVoxels& raw_data, int scale, int3 index)
 			const int voxel_z = index.z + ((i >> 2) & 3);
 			const int voxel_offset = voxel_z * wh + voxel_y * raw_data.w + voxel_x;
 			const Voxel& voxel = raw_data.raw_data[voxel_offset];
-
+			
 			if (voxel.albedo_a != 0x00) {
-				SmallVoxel small{};
-				small.albedo_r = voxel.albedo_r;
-				small.albedo_g = voxel.albedo_g;
-				small.albedo_b = voxel.albedo_b;
-				voxels[voxel_count++] = small;
+				data_r[i] = voxel.albedo_r;
+				data_g[i] = voxel.albedo_g;
+				data_b[i] = voxel.albedo_b;
 				leaf_node.child_mask |= (1ull << i);
+				num_voxels++;
 			}
+		}
+
+		/* Compressed the voxel block */
+		if (leaf_node.child_mask != 0x00) {
+			const uint32_t num_dwords = (num_voxels * Vbc64::LERP_BITS + 31u) / 32u;
+			uint32_t* dwords = voxels + dword_count;
+
+			blocks[block_count].albedo_r = compress_vbc64(data_r, dwords, leaf_node.child_mask);
+			blocks[block_count].albedo_g = compress_vbc64(data_g, dwords + num_dwords, leaf_node.child_mask);
+			blocks[block_count].albedo_b = compress_vbc64(data_b, dwords + num_dwords * 2u, leaf_node.child_mask);
+			blocks[block_count++].dword_offset = dword_count;
+			dword_count += num_dwords * 3u;
 		}
 
 		return leaf_node;
@@ -82,17 +96,20 @@ Svt64::Node Svt64::subdivide(const RawVoxels& raw_data, int scale, int3 index)
 	return node;
 }
 
-void Svt64::build(const RawVoxels& raw_data)
+void Cvt64::build(const RawVoxels& raw_data)
 {
 	/* Delete old data */
 	if (nodes != nullptr) delete[] nodes;
+	if (blocks != nullptr) delete[] blocks;
 	if (voxels != nullptr) delete[] voxels;
 
 	/* Allocate space for new tree */
 	nodes = (Node*)malloc(1ull << 26);
 	node_count = 1u;
-	voxels = (SmallVoxel*)malloc(1ull << 26);
-	voxel_count = 0u;
+	blocks = (Block*)malloc(1ull << 26);
+	block_count = 0u;
+	voxels = (uint32_t*)malloc(1ull << 26);
+	dword_count = 0u;
 
 	/* Required tree depth */
 	req_depth = log_base(max(max(raw_data.w, raw_data.h), raw_data.d), 4);
@@ -155,16 +172,16 @@ inline float sign(const float f) {
 	return f >= 0.0f ? 1.0f : -1.0f;
 }
 
-uint64_t Svt64::memory_usage() const {
-	return node_count * sizeof(Node) + voxel_count * sizeof(SmallVoxel);
+uint64_t Cvt64::memory_usage() const {
+	return node_count * sizeof(Node) + block_count * sizeof(Block) + dword_count * sizeof(uint32_t);
 }
 
-uint64_t Svt64::wasted_memory() const {
+uint64_t Cvt64::wasted_memory() const {
 	return wasted_count;
 }
 
 /* Credit: <https://dubiousconst282.github.io/2024/10/03/voxel-ray-tracing/> */
-VoxelHit Svt64::trace(const Ray& ray) const {
+VoxelHit Cvt64::trace(const Ray& ray) const {
 	/* Traversal state */
 	uint stack[11]{};
 	int scale_exp = 21; /* 23 mantissa bits - 2 */
@@ -252,11 +269,16 @@ VoxelHit Svt64::trace(const Ray& ray) const {
 		const float t = length(pos - ray.O);
 
 		const uint child_index = get_node_cell_index(pos, scale_exp);
-		const SmallVoxel voxel = voxels[node.abs_ptr() + popcnt_var64(node.child_mask, child_index)];
+		const Block& block = blocks[node.abs_ptr()];
+		const uint32_t num_voxels = popcnt_var64(node.child_mask, 64u);
+		const uint32_t voxel_index = popcnt_var64(node.child_mask, child_index);
+		const uint32_t num_dwords = (num_voxels * Vbc64::LERP_BITS + 31u) / 32u;
+		uint32_t* dwords = voxels + block.dword_offset;
 		Voxel mat{};
-		mat.albedo_r = voxel.albedo_r;
-		mat.albedo_g = voxel.albedo_g;
-		mat.albedo_b = voxel.albedo_b;
+		mat.albedo_r = (uint32_t)(read_vbc64(block.albedo_r, dwords, voxel_index));
+		mat.albedo_g = (uint32_t)(read_vbc64(block.albedo_g, dwords + num_dwords, voxel_index));
+		mat.albedo_b = (uint32_t)(read_vbc64(block.albedo_b, dwords + num_dwords * 2u, voxel_index));
+		mat.albedo_a = 0xFF;
 
 		// float tmax = min(min(sideDist.x, sideDist.y), sideDist.z);
 		// bool3 sideMask = tmax >= sideDist;
@@ -266,13 +288,16 @@ VoxelHit Svt64::trace(const Ray& ray) const {
 		if (side_dist.x < side_dist.y) {
 			if (side_dist.x < side_dist.z) {
 				normal.x = -sign(dir.x);
-			} else {
+			}
+			else {
 				normal.z = -sign(dir.z);
 			}
-		} else {
+		}
+		else {
 			if (side_dist.y < side_dist.z) {
 				normal.y = -sign(dir.y);
-			} else {
+			}
+			else {
 				normal.z = -sign(dir.z);
 			}
 		}
@@ -282,169 +307,8 @@ VoxelHit Svt64::trace(const Ray& ray) const {
 	return VoxelHit(1e30f, 0.0f, VOXEL_EMPTY, (uint16_t)i + 1u);
 }
 
-void Svt64::set_voxel(uint32_t x, uint32_t y, uint32_t z) {
-	uint32_t node_index = 0u;
-	uint32_t scale = req_depth * 2u;
-
-	for (;;) {
-		Node& node = nodes[node_index];
-
-		if (node.is_leaf()) break;
-
-		scale -= 2u;
-		const uint32_t lx = (x >> scale) & 3u;
-		const uint32_t ly = (y >> scale) & 3u;
-		const uint32_t lz = (z >> scale) & 3u;
-		const uint32_t li = lx + ly * 16u + lz * 4u;
-		const uint64_t lm = 1ull << li;
-
-		/* If the child doesn't exist yet, create it */
-		if ((node.child_mask & lm) == 0ull) {
-			const uint32_t prev_child_index = node.abs_ptr();
-			wasted_count += popcnt_var64(node.child_mask, 64u) * sizeof(Node);
-			node = Node(false, node_count, node.child_mask | lm);
-
-			for (int i = 0, j = 0; i < 64; ++i) {
-				const bool is_new = i == li;
-
-				if (is_new) {
-					/* Add new node */
-					nodes[node_count++] = Node(scale <= 2u, 0u, 0ull);
-				} else {
-					/* Copy over old node */
-					if (node.child_mask & (1ull << i)) {
-						nodes[node_count++] = nodes[prev_child_index + j];
-						j++;
-					}
-				}
-			}
-		}
-
-		node_index = node.abs_ptr() + popcnt_var64(node.child_mask, li);
-	}
-
-	Node& node = nodes[node_index];
-
-	const uint32_t lx = x & 3u;
-	const uint32_t ly = y & 3u;
-	const uint32_t lz = z & 3u;
-	const uint32_t li = lx + ly * 16u + lz * 4u;
-	const uint64_t lm = 1ull << li;
-
-	/* If the voxel doesn't exist yet, create it */
-	if ((node.child_mask & lm) == 0ull) {
-		const uint32_t prev_voxel_index = node.abs_ptr();
-		wasted_count += popcnt_var64(node.child_mask, 64u) * sizeof(Voxel);
-
-		Voxel voxel {};
-		voxel.albedo_r = 0xFF;
-		voxel.albedo_a = 0xFF;
-
-		node = Node(true, voxel_count, node.child_mask | lm);
-		for (int i = 0, j = 0; i < 64; ++i) {
-			const bool is_new = i == li;
-
-			if (is_new) {
-				/* Add new voxel */
-				SmallVoxel small{};
-				small.albedo_r = voxel.albedo_r;
-				small.albedo_g = voxel.albedo_g;
-				small.albedo_b = voxel.albedo_b;
-				voxels[voxel_count++] = small;
-			} else {
-				/* Copy over old voxel */
-				if (node.child_mask & (1ull << i)) {
-					voxels[voxel_count++] = voxels[prev_voxel_index + j];
-					j++;
-				}
-			}
-		}
-	}
-}
-
-void Svt64::defrag() {
-	/* Copy current nodes and voxels */
-	Node* new_nodes = new Node[node_count * 2];
-	SmallVoxel* new_voxels = new SmallVoxel[voxel_count * 2];
-
-	/* Traverse the tree top down, move all child nodes/voxels into new lists */
-	node_count = 1u;
-	voxel_count = wasted_count = 0u;
-	defrag_recurse(0u, 0u, new_nodes, new_voxels);
-
-	delete[] nodes;
-	nodes = new_nodes;
-	delete[] voxels;
-	voxels = new_voxels;
-}
-
-void Svt64::defrag_recurse(uint32_t old_index, uint32_t new_index, Node* new_nodes, SmallVoxel* new_voxels) {
-#if 0 /* Recursive */
-	const Node& old_node = nodes[old_index];
-	Node& new_node = new_nodes[new_index];
-	const uint32_t child_count = popcnt_var64(old_node.child_mask, 64u);
-	const uint32_t child_ptr = old_node.abs_ptr();
-
-	/* Defrag leaf node */
-	if (old_node.is_leaf()) {
-		new_node = Node(true, voxel_count, old_node.child_mask);
-		memcpy(new_voxels + voxel_count, voxels + child_ptr, child_count * sizeof(Voxel));
-		voxel_count += child_count;
-		return;
-	}
-
-	/* Defrag node */
-	new_node = Node(false, node_count, old_node.child_mask);
-	memcpy(new_nodes + node_count, nodes + child_ptr, child_count * sizeof(Node));
-	node_count += child_count;
-
-	/* Recurse into child nodes */
-	for (uint32_t i = 0u; i < child_count; ++i) {
-		defrag_recurse(child_ptr + i, new_node.abs_ptr() + i, new_nodes, new_voxels);
-	}
-#else /* Non-recursive */
-	uint32_t old_stack[128] {};
-	uint32_t new_stack[128] {};
-	uint32_t stack_ptr = 0u;
-	uint32_t old_node_index = 0u;
-	uint32_t new_node_index = 0u;
-
-	for (;;) {
-		const Node& old_node = nodes[old_node_index];
-		Node& new_node = new_nodes[new_node_index];
-		const uint32_t child_count = popcnt_var64(old_node.child_mask, 64u);
-		const uint32_t child_ptr = old_node.abs_ptr();
-
-		/* Defrag leaf node */
-		if (old_node.is_leaf()) {
-			new_node = Node(true, voxel_count, old_node.child_mask);
-			memcpy(new_voxels + voxel_count, voxels + child_ptr, child_count * sizeof(SmallVoxel));
-			voxel_count += child_count;
-			if (stack_ptr == 0u) break;
-			old_node_index = old_stack[--stack_ptr];
-			new_node_index = new_stack[stack_ptr];
-			continue;
-		}
-
-		/* Defrag node */
-		new_node = Node(false, node_count, old_node.child_mask);
-		memcpy(new_nodes + node_count, nodes + child_ptr, child_count * sizeof(Node));
-		node_count += child_count;
-
-		/* Recurse into child nodes */
-		for (uint32_t i = 0u; i < child_count; ++i) {
-			old_stack[stack_ptr] = child_ptr + i;
-			new_stack[stack_ptr++] = new_node.abs_ptr() + i;
-		}
-
-		if (stack_ptr == 0u) break;
-		old_node_index = old_stack[--stack_ptr];
-		new_node_index = new_stack[stack_ptr];
-	}
-#endif
-}
-
-Svt64::~Svt64() {
+Cvt64::~Cvt64() {
 	if (nodes != nullptr) delete[] nodes;
+	if (blocks != nullptr) delete[] blocks;
 	if (voxels != nullptr) delete[] voxels;
 }

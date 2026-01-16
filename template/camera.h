@@ -7,8 +7,8 @@ public:
 	Camera()
 	{
 		// setup a basic view frustum
-		camPos = float3(0.508979, 1.783545, 0.884068);
-		camTarget = float3(1.317945, 1.386426, 1.317510);
+		camPos = float3(2.086697, 1.157000, 1.514988);
+		camTarget = float3(1.089513, 1.120206, 1.449636);
 		float3 ahead = normalize(camTarget - camPos);
 		float3 tmpUp(0, 1, 0);
 		float3 right = normalize(cross(tmpUp, ahead));
